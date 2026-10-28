@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Glide Reader">
-  <title>Glide Reader — a focused speed reader (v1.1)</title>
+  <title>Glide Reader — a focused speed reader (v1.3)</title>
   <meta name="description" content="A privacy-conscious, no-subscription single-word reader for your own documents.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-180.png">
@@ -48,7 +48,11 @@
     .control.primary {background:#f0f5fb;border-color:#f0f5fb;color:#111a28;min-width:94px;font-size:15px;font-weight:800; }
     .control:disabled { opacity:.45;cursor:not-allowed; }
     .control.voice { width:auto;padding:0 14px;font-size:13px;font-weight:700; }
-    .speed { display:flex;align-items:center;gap:12px;margin-top:27px;padding:15px 0 0;border-top:1px solid var(--line); }
+    .awake-row { display:flex; flex-wrap:wrap; align-items:center;gap:9px 14px; margin-top:19px; font-size:12px; color:var(--muted); }
+    .awake-row label { display:flex;align-items:center;gap:9px;cursor:pointer; }
+    .awake-row input { width:18px;height:18px;accent-color:var(--hot); }
+    #awakeState {font-size:11px;opacity:.9;}
+    .speed { display:flex;align-items:center;gap:12px;margin-top:20px;padding:15px 0 0;border-top:1px solid var(--line); }
     .speed label { font-size:13px;color:var(--muted);white-space:nowrap; }
     input[type=range] { width:100%; accent-color:var(--hot); min-width:0; }
     .speedvalue { min-width:88px;text-align:right;font-size:13px;font-weight:750; font-variant-numeric:tabular-nums; }
@@ -68,6 +72,22 @@
     .row { display:flex;justify-content:space-between;align-items:center;gap:10px; }
     .library { display:grid;gap:9px;max-height:350px;overflow-y:auto; }
     .book { background:#1e2a3a;border:1px solid #344154;border-radius:13px;padding:12px;display:flex;align-items:center;gap:8px; }
+    /* The miniature file icons are also accessible format pickers. Existing v1.2
+       entries have no recorded file extension; they can be labeled here without
+       re-importing or losing reading progress. */
+    .book-icon-wrap { position:relative; flex:none; width:40px; height:45px; border-radius:7px;
+      border:1px solid #66839b; background:#26394d; color:#dceafa; overflow:hidden; }
+    .book-icon-wrap::after { content:""; position:absolute; right:0; top:0; width:11px; height:11px;
+      background:#8396a9; clip-path:polygon(0 0,100% 100%,100% 0); pointer-events:none; }
+    .book-icon-wrap.kind-pdf {background:#562936;border-color:#b65d6d;color:#ffd7e2;}
+    .book-icon-wrap.kind-epub {background:#20463d;border-color:#638e7e;color:#d0f8e4;}
+    .book-icon-wrap.kind-txt,.book-icon-wrap.kind-md {background:#293c51;border-color:#7188a4;color:#daedff;}
+    .book-icon-wrap.kind-html {background:#594326;border-color:#a78a58;color:#fff0c5;}
+    .book-icon-wrap.kind-note {background:#3a3355;border-color:#8276b0;color:#e4dcff;}
+    .book-type-select { appearance:none; -webkit-appearance:none; width:100%;height:100%;margin:0;padding:17px 1px 3px;
+      text-align:center;background:transparent;color:inherit;border:0;outline-offset:-3px;cursor:pointer;
+      font-size:9px;font-weight:900;line-height:1;letter-spacing:-.25px;}
+    .book-type-select option {color:#111a28;background:white;}
     .book-main { background:none;color:var(--text);border:0;text-align:left;padding:2px;flex:1;min-width:0; }
     .book-name {font-size:13px;font-weight:750;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;display:block;}
     .book-sub {font-size:11px;color:var(--muted);margin-top:5px;display:block;}
@@ -78,6 +98,46 @@
     #status[data-kind="success"] {color:#a3e9bd;}
     .footer { padding:15px 5px; font-size:12px; color:#889cb2;line-height:1.6; }
     .chip { background:#26374d;border-radius:30px;padding:5px 9px;color:#b9cee8;font-size:11px; }
+    .reader-actions {display:flex;align-items:center;gap:8px;flex:none;}
+    .focus-btn {white-space:nowrap; font-size:12px; min-height:38px;}
+    /* Focus mode deliberately doesn't rely on the browser Fullscreen API: iPhone
+       Home Screen web apps can fill their own viewport reliably with fixed layout. */
+    body.focus-mode {overflow:hidden;background:var(--bg);}
+    body.focus-mode .top,body.focus-mode .lower,body.focus-mode .footer {display:none;}
+    body.focus-mode .reader {position:fixed;z-index:100;inset:0;width:100%;height:100vh;height:100dvh;
+      display:flex;flex-direction:column;border:0;border-radius:0;box-shadow:none;overflow:hidden;
+      background:var(--bg);padding:calc(14px + env(safe-area-inset-top))
+        calc(16px + env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom))
+        calc(16px + env(safe-area-inset-left));}
+    body.focus-mode .reader-head {flex-shrink:0;}
+    body.focus-mode .reader-head .docname {max-width:50vw;}
+    body.focus-mode #wordCount {display:none;}
+    body.focus-mode .stage {flex:1 1 auto;min-height:110px;}
+    body.focus-mode .wordline {font-size:clamp(42px,9vw,90px);}
+    body.focus-mode .stage:before {top:23%;}
+    body.focus-mode .stage:after {bottom:23%;}
+    body.focus-mode .stage-help {bottom:11%;}
+    body.focus-mode .track {flex-shrink:0;}
+    body.focus-mode .meta {flex-shrink:0;margin:11px 0 15px;}
+    body.focus-mode .controls {flex-shrink:0;gap:8px;}
+    body.focus-mode .awake-row {display:none;}
+    body.focus-mode .speed {flex-shrink:0;margin-top:15px;padding-top:13px;}
+    @media (max-width:430px) {
+      .reader-actions {gap:6px;}
+      .focus-btn {padding:8px 10px;}
+      body.focus-mode .controls {flex-wrap:wrap;}
+      body.focus-mode .control {height:44px;min-width:46px;}
+      body.focus-mode .control.primary {min-width:85px;}
+      body.focus-mode .control.voice {padding:0 11px;}
+    }
+    @media (max-height:570px) {
+      body.focus-mode .stage:before {top:15%;}
+      body.focus-mode .stage:after {bottom:15%;}
+      body.focus-mode .stage-help {bottom:5%;}
+      body.focus-mode .meta {margin:6px 0 9px;}
+      body.focus-mode .speed {margin-top:8px;padding-top:9px;}
+    }
+
     @media (max-width:690px) { .lower {grid-template-columns:1fr;} .reader{padding:18px 16px 21px;} .stage{min-height:248px;} .stage:before{top:44px;} .stage:after{bottom:44px;} .stage-help{bottom:18px;} .local{font-size:10px;padding:7px;} .pad{padding:21px;} }
     @media (prefers-reduced-motion: reduce) { * {transition:none !important;} }
   </style>
@@ -108,7 +168,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   <section class="card reader" aria-label="Speed reader">
     <div class="reader-head">
       <div style="min-width:0"><div class="eyebrow">Now reading</div><div class="docname" id="docName">Welcome to Glide</div></div>
-      <span class="chip" id="wordCount">0 words</span>
+      <div class="reader-actions">
+        <span class="chip" id="wordCount">0 words</span>
+        <button type="button" class="smallbtn focus-btn" id="focusBtn" aria-pressed="false" aria-label="Expand Now Reading to focus mode">⛶ Focus</button>
+      </div>
     </div>
     <div class="stage" id="stage" role="button" tabindex="0" aria-label="Tap to start or pause reading">
       <div class="wordline" aria-live="off"><span class="left-word" id="wordLeft"></span><span class="pivot" id="wordPivot">R</span><span class="right-word" id="wordRight">eady</span></div>
@@ -121,6 +184,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <button class="control primary" id="playBtn">▶ Play</button>
       <button class="control" id="nextBtn" title="Forward 10 words" aria-label="Forward 10 words">10 ↷</button>
       <button class="control voice" id="voiceBtn" title="Read aloud using device voice">♫ Narrate</button>
+    </div>
+    <div class="awake-row">
+      <label for="keepAwake"><input type="checkbox" id="keepAwake" checked>Keep screen on while reading</label>
+      <span id="awakeState" role="status" aria-live="polite">On during Play / Narrate, when supported</span>
     </div>
     <div class="speed"><label for="wpm">Reading speed</label><input type="range" id="wpm" min="100" max="1000" step="25" value="300"><span class="speedvalue" id="wpmValue">300 WPM</span></div>
   </section>
@@ -140,10 +207,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <section class="card pad" aria-label="Reading library">
       <div class="row"><div><div class="eyebrow">Saved on this device</div><h2>My library</h2></div><span class="chip" id="libraryCount">0 items</span></div>
       <div class="library" id="libraryList"><div class="empty">Your library is loading…</div></div>
+      <p>Tap a document icon to choose its file format. Older imports may show FILE until you set their type.</p>
       <p>Play/Pause: Space on your computer. Back/forward: ← / →. Tap the reader on your phone.</p>
     </section>
   </div>
-  <div class="footer">Glide Reader is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
+  <div class="footer">Glide Reader v1.3 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
 </div>
 <script>
 (() => {
@@ -151,6 +219,10 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const $ = id => document.getElementById(id);
   const WELCOME = 'Welcome to Glide Reader. Your attention has somewhere to land. Each word appears in one place, and a small red letter helps your eyes stay focused. Tap Play to begin. Adjust the speed until it feels natural, then paste your own article or import a document. You can return to your place later. Reading quickly is only useful when you understand what you read, so feel free to slow down, pause, and reflect.';
   let doc = null, words = [], index = 0, playing = false, timer = null, narrating = false, utterance = null, books = [], db = null;
+  let wakeLock=null, wakeRequest=null, keepScreenOn=true;
+  let speechSession=0, speechStartWatchdog=null, speechNextTimer=null, speechStarted=false, nextSpeechIndex=0;
+  try{keepScreenOn=localStorage.getItem('glide_keep_screen_on')!=='false';}catch(e){}
+  $('keepAwake').checked=keepScreenOn;
   let savedWpm = 300; try { savedWpm = Number(localStorage.getItem('glide_wpm') || 300); } catch(e) {}
   let wpm = savedWpm;
   wpm = Number.isFinite(wpm) ? Math.min(1000, Math.max(100,wpm)) : 300;
@@ -163,18 +235,199 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function txAll() { return new Promise(resolve => { if(!db) {try{return resolve(JSON.parse(localStorage.getItem('glide_docs') || '[]'));}catch(e){return resolve([]);}} const req=db.transaction('docs','readonly').objectStore('docs').getAll();req.onsuccess=()=>resolve(req.result || []);req.onerror=()=>resolve([]);}); }
   function txPut(item) {return new Promise(resolve => { if(!db){try{let a=JSON.parse(localStorage.getItem('glide_docs') || '[]');a=a.filter(x=>x.id!==item.id);a.push(item);localStorage.setItem('glide_docs',JSON.stringify(a));resolve(true);}catch(e){resolve(false);}return;}const tx=db.transaction('docs','readwrite');tx.objectStore('docs').put(item);tx.oncomplete=()=>resolve(true);tx.onerror=()=>resolve(false);});}
   function txDelete(id) {return new Promise(resolve => {if(!db){try{let a=JSON.parse(localStorage.getItem('glide_docs')||'[]');localStorage.setItem('glide_docs',JSON.stringify(a.filter(x=>x.id!==id)));}catch(e){}resolve();return;}const tx=db.transaction('docs','readwrite');tx.objectStore('docs').delete(id);tx.oncomplete=()=>resolve();tx.onerror=()=>resolve();});}
-  async function refreshBooks(){books=(await txAll()).sort((a,b)=>(b.updated||0)-(a.updated||0));const list=$('libraryList');list.replaceChildren();$('libraryCount').textContent=`${books.length} item${books.length===1?'':'s'}`;if(!books.length){const empty=document.createElement('div');empty.className='empty';empty.textContent='Add text or a file to start your library.';list.append(empty);return;}for(const item of books){const line=document.createElement('div');line.className='book';const btn=document.createElement('button');btn.className='book-main';const name=document.createElement('span');name.className='book-name';name.textContent=item.title;const sub=document.createElement('span');sub.className='book-sub';const count=tokenize(item.text).length;sub.textContent=`${count.toLocaleString()} words · ${Math.floor(100*(item.progress||0)/Math.max(1,count))}% complete`;btn.append(name,sub);btn.onclick=()=>loadDoc(item);const del=document.createElement('button');del.className='trash';del.textContent='✕';del.title='Delete this document';del.setAttribute('aria-label',`Delete ${item.title}`);del.onclick=async()=>{if(!confirm(`Remove “${item.title}” from this device?`))return;await txDelete(item.id);if(doc?.id===item.id)loadDoc({id:'welcome',title:'Welcome to Glide',text:WELCOME,progress:0});await refreshBooks();};line.append(btn,del);list.append(line);}}
+  const fileTypes = ['file','epub','pdf','txt','md','html','note'];
+  function normalizeFileType(item){
+    const candidate=String(item.fileType||item.originalName?.split('.').pop()||'').toLowerCase().replace(/^\./,'');
+    if(candidate==='htm')return 'html';
+    if(candidate==='text')return 'txt';
+    return fileTypes.includes(candidate)?candidate:'file';
+  }
+  async function refreshBooks(){
+    books=(await txAll()).sort((a,b)=>(b.updated||0)-(a.updated||0));
+    const list=$('libraryList');list.replaceChildren();
+    $('libraryCount').textContent=`${books.length} item${books.length===1?'':'s'}`;
+    if(!books.length){
+      const empty=document.createElement('div');empty.className='empty';
+      empty.textContent='Add text or a file to start your library.';list.append(empty);return;
+    }
+    for(const item of books){
+      const line=document.createElement('div');line.className='book';
+      const kind=normalizeFileType(item);
+      const icon=document.createElement('div');icon.className='book-icon-wrap kind-'+kind;
+      const typeSelect=document.createElement('select');typeSelect.className='book-type-select';
+      typeSelect.title='Choose file type';
+      typeSelect.setAttribute('aria-label',`File type for ${item.title}`);
+      for(const option of fileTypes){const el=document.createElement('option');el.value=option;
+        el.textContent=option==='file'?'FILE':option.toUpperCase();typeSelect.append(el);}
+      typeSelect.value=kind;
+      typeSelect.onchange=async()=>{
+        const newType=typeSelect.value;
+        const changed={...item,fileType:newType};
+        const saved=await txPut(changed);
+        if(doc?.id===item.id)doc.fileType=newType;
+        if(!saved){status('Could not save the file type to this device.','error');return;}
+        icon.className='book-icon-wrap kind-'+newType;
+        status(`File icon for “${item.title}” set to ${newType.toUpperCase()}.`,'success');
+      };
+      icon.append(typeSelect);
+      const btn=document.createElement('button');btn.className='book-main';
+      const name=document.createElement('span');name.className='book-name';name.textContent=item.title;
+      const sub=document.createElement('span');sub.className='book-sub';
+      const count=tokenize(item.text).length;
+      sub.textContent=`${count.toLocaleString()} words · ${Math.floor(100*(item.progress||0)/Math.max(1,count))}% complete`;
+      btn.append(name,sub);btn.onclick=()=>loadDoc(item);
+      const del=document.createElement('button');del.className='trash';del.textContent='✕';
+      del.title='Delete this document';del.setAttribute('aria-label',`Delete ${item.title}`);
+      del.onclick=async()=>{
+        if(!confirm(`Remove “${item.title}” from this device?`))return;
+        await txDelete(item.id);
+        if(doc?.id===item.id)loadDoc({id:'welcome',title:'Welcome to Glide',text:WELCOME,progress:0,fileType:'note'});
+        await refreshBooks();
+      };
+      line.append(icon,btn,del);list.append(line);
+    }
+  }
   function displayWord(word){const a=$('wordLeft'),b=$('wordPivot'),c=$('wordRight');let chars=[...word];if(!chars.length){a.textContent='';b.textContent='';c.textContent='';return;}const letters=chars.map((x,i)=>/[\p{L}\p{N}]/u.test(x)?i:-1).filter(i=>i>=0);const logical=letters.length<=1?0:letters.length<=5?1:letters.length<=9?2:Math.floor(letters.length*.35);const p=letters.length?letters[Math.min(logical,letters.length-1)]:0;a.textContent=chars.slice(0,p).join('');b.textContent=chars[p];c.textContent=chars.slice(p+1).join('');}
   function render(){const current=words[index]||'Done';displayWord(current);$('docName').textContent=doc?.title||'Welcome';$('wordCount').textContent=words.length.toLocaleString()+' words';const currentNum=Math.min(index+1,words.length);$('position').textContent=`${currentNum.toLocaleString()} of ${words.length.toLocaleString()} words`;$('progressFill').style.width=(100*currentNum/Math.max(1,words.length))+'%';const remain=Math.max(0,words.length-currentNum);const secs=Math.round(remain/wpm*60);$('timeLeft').textContent=secs>=60?`${Math.ceil(secs/60)} min remaining`:`${secs} sec remaining`;$('playBtn').textContent=playing?'❚❚ Pause':'▶ Play';$('voiceBtn').textContent=narrating?'■ Stop voice':'♫ Narrate';}
-  function cancelModes(){clearTimeout(timer);timer=null;playing=false;const wasNarrating=narrating;narrating=false;if(wasNarrating&&'speechSynthesis' in window)window.speechSynthesis.cancel();utterance=null;render();}
+  function setAwakeMessage(msg){$('awakeState').textContent=msg;}
+  async function releaseWakeLock(){
+    const held=wakeLock; wakeLock=null;
+    if(held && !held.released){try{await held.release();}catch(e){}}
+    setAwakeMessage(keepScreenOn?'On during Play / Narrate, when supported':'Screen stay-awake disabled');
+  }
+  async function requestWakeLock(){
+    if(!keepScreenOn||document.hidden||(!playing&&!narrating))return;
+    if(!navigator.wakeLock?.request){setAwakeMessage('Keep-awake not supported; use iPhone Auto-Lock settings');return;}
+    if(wakeLock&&!wakeLock.released)return;
+    if(wakeRequest)return wakeRequest;
+    wakeRequest=(async()=>{
+      try{
+        const lock=await navigator.wakeLock.request('screen');
+        if(!keepScreenOn||document.hidden||(!playing&&!narrating)){
+          try{await lock.release();}catch(e){}
+          return;
+        }
+        wakeLock=lock;
+        setAwakeMessage('Screen stays awake while reading');
+        lock.addEventListener('release',()=>{
+          if(wakeLock!==lock)return;
+          wakeLock=null;
+          if(playing||narrating)setAwakeMessage('Screen keep-awake released by iPhone');
+        });
+      }catch(e){
+        setAwakeMessage('Cannot prevent screen lock on this device right now');
+        console.warn('Screen Wake Lock unavailable:',e);
+      }
+    })();
+    try{await wakeRequest;}finally{wakeRequest=null;}
+  }
+  function cancelModes(){
+    clearTimeout(timer);timer=null;
+    clearTimeout(speechStartWatchdog);speechStartWatchdog=null;
+    clearTimeout(speechNextTimer);speechNextTimer=null;
+    speechSession++;
+    playing=false;
+    const wasNarrating=narrating;
+    narrating=false;
+    if(wasNarrating&&'speechSynthesis' in window){try{window.speechSynthesis.cancel();}catch(e){}}
+    utterance=null;
+    void releaseWakeLock();
+    render();
+  }
   async function saveProgress(){if(doc&&doc.id!=='welcome'){doc.progress=index;doc.updated=Date.now();await txPut(doc);}}
   function loadDoc(item){cancelModes();doc={...item};words=tokenize(doc.text);index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
   function wordDuration(word){let ms=60000/wpm; if(/[.!?][”’"')\]]*$/.test(word)) ms*=1.9;else if(/[,;:][”’"')\]]*$/.test(word)) ms*=1.4;if(word.length>12)ms*=1.25;return ms;}
   function tick(){if(!playing)return;const wait=wordDuration(words[index]||'');timer=setTimeout(()=>{if(!playing)return;if(index>=words.length-1){playing=false;render();saveProgress();status('Finished! You can restart with the back button.');return;}index++;render();if(index%9===0)saveProgress();tick();},wait);}
-  function togglePlayback(){if(narrating)cancelModes();if(!words.length)return;if(playing){cancelModes();saveProgress();return;}if(index>=words.length-1)index=0;playing=true;render();tick();}
+  function togglePlayback(){if(narrating)cancelModes();if(!words.length)return;if(playing){cancelModes();saveProgress();return;}if(index>=words.length-1)index=0;playing=true;render();void requestWakeLock();tick();}
   function seek(n){cancelModes();index=Math.max(0,Math.min(words.length-1,index+n));render();saveProgress();}
-  function narrate(){if(narrating){cancelModes();saveProgress();return;}cancelModes();if(!('speechSynthesis' in window)||typeof SpeechSynthesisUtterance==='undefined'){status('Speech synthesis is not supported by this browser.');return;}if(!words.length)return;narrating=true;const section=words.slice(index).join(' ');const from=index;const offsets=[...section.matchAll(/\S+/g)].map(m=>m.index);let boundaries=0;utterance=new SpeechSynthesisUtterance(section);utterance.rate=Math.min(2,Math.max(.6,wpm/250));utterance.lang=document.documentElement.lang||'en';utterance.onboundary=e=>{if(!narrating||e.name!=='word')return;boundaries++;let lo=0,hi=offsets.length-1;while(lo<hi){const mid=Math.ceil((lo+hi)/2);if(offsets[mid]<=e.charIndex)lo=mid;else hi=mid-1;}index=Math.min(words.length-1,from+lo);render();};utterance.onend=()=>{if(narrating){narrating=false;render();saveProgress();if(!boundaries)status('Narration finished. This browser did not report individual word positions.');}};utterance.onerror=()=>{narrating=false;render();status('Speech playback was unavailable.');};window.speechSynthesis.cancel();window.speechSynthesis.speak(utterance);render();status('Narrating using your device voice. Word synchronization depends on browser support.');}
-  async function addDocument(title,text){text=clean(text);if(!text){status('Please enter or import some text first.','error');return null;}if(tokenize(text).length>350000){status('This version supports books up to 350,000 words.','error');return null;}const item={id:newId(),title:clean(title)||'Untitled reading',text,progress:0,updated:Date.now()};const saved=await txPut(item);await refreshBooks();loadDoc(item);status(saved?`Added “${item.title}” to your library.`:'The text is ready to read, but browser storage was unavailable.');return saved;}
+  // iPhone Safari frequently fails to speak book-length utterances. Read short
+  // chunks instead, keeping the first speak() directly inside the tap handler.
+  function speechChunk(start){
+    const chunk=[];let length=0;
+    for(let i=start;i<words.length&&chunk.length<24;i++){
+      const word=words[i];
+      if(chunk.length>=8 && length+word.length+1>180)break;
+      chunk.push(word);length+=word.length+1;
+      if(chunk.length>=10 && /[.!?][”’"')\]]*$/.test(word))break;
+    }
+    return chunk;
+  }
+  function speakNextChunk(session){
+    if(!narrating||session!==speechSession)return;
+    if(nextSpeechIndex>=words.length){
+      narrating=false;utterance=null;render();void releaseWakeLock();saveProgress();
+      status('Narration finished.');return;
+    }
+    const start=nextSpeechIndex;
+    const chunk=speechChunk(start);
+    if(!chunk.length){narrating=false;render();void releaseWakeLock();return;}
+    const text=chunk.join(' ');
+    const offsets=[...text.matchAll(/\S+/g)].map(m=>m.index);
+    const u=new SpeechSynthesisUtterance(text);
+    utterance=u;
+    u.lang=document.documentElement.lang||'en-US';
+    // Speech rates are not exact WPM; retain a useful range on Apple voices.
+    u.rate=Math.max(.65,Math.min(1.8,wpm/250));
+    u.pitch=1;u.volume=1;
+    speechStarted=false;
+    u.onstart=()=>{
+      if(session!==speechSession||!narrating)return;
+      speechStarted=true;clearTimeout(speechStartWatchdog);speechStartWatchdog=null;
+      setAwakeMessage(keepScreenOn&&wakeLock?'Screen stays awake while reading':$('awakeState').textContent);
+      status('Narrating aloud. Tap Stop voice to pause.');
+    };
+    u.onboundary=e=>{
+      if(session!==speechSession||!narrating||e.name!=='word')return;
+      let lo=0,hi=offsets.length-1;
+      while(lo<hi){const mid=Math.ceil((lo+hi)/2);if(offsets[mid]<=e.charIndex)lo=mid;else hi=mid-1;}
+      index=Math.min(words.length-1,start+lo);
+      render();
+    };
+    u.onend=()=>{
+      if(session!==speechSession||!narrating)return;
+      clearTimeout(speechStartWatchdog);speechStartWatchdog=null;
+      nextSpeechIndex=start+chunk.length;
+      index=Math.min(words.length-1,nextSpeechIndex);
+      render();saveProgress();
+      // Wait briefly for Safari to finish releasing its previous speech item.
+      speechNextTimer=setTimeout(()=>speakNextChunk(session),80);
+    };
+    u.onerror=e=>{
+      if(session!==speechSession||!narrating)return;
+      clearTimeout(speechStartWatchdog);speechStartWatchdog=null;
+      narrating=false;utterance=null;render();void releaseWakeLock();saveProgress();
+      status(`Speech could not play (${e.error||'unknown error'}). Try reopening the app, raising the volume, or testing in Safari.`, 'error');
+    };
+    try{
+      window.speechSynthesis.speak(u);
+      // Safari can ignore speech requests without producing an error event.
+      speechStartWatchdog=setTimeout(()=>{
+        if(session!==speechSession||!narrating||speechStarted)return;
+        if(window.speechSynthesis.speaking)return;
+        status('Voice has not started. Check the volume, then try stopping and starting Narrate; if needed, restart Glide Reader.', 'error');
+      },6500);
+    }catch(e){
+      narrating=false;utterance=null;render();void releaseWakeLock();
+      status('Speech could not start: '+(e?.message||String(e)),'error');
+    }
+  }
+  function narrate(){
+    if(narrating){cancelModes();saveProgress();return;}
+    cancelModes();
+    if(!('speechSynthesis' in window)||typeof SpeechSynthesisUtterance==='undefined'){
+      status('Speech synthesis is not supported by this browser.','error');return;
+    }
+    if(!words.length)return;
+    if(index>=words.length-1)index=0;
+    narrating=true;nextSpeechIndex=index;
+    const session=++speechSession;
+    render();
+    void requestWakeLock();
+    // DO NOT await anything here: the first speak must be in the button tap.
+    speakNextChunk(session);
+    status('Starting iPhone voice…');
+  }
+  async function addDocument(title,text,fileType='note'){text=clean(text);if(!text){status('Please enter or import some text first.','error');return null;}if(tokenize(text).length>350000){status('This version supports books up to 350,000 words.','error');return null;}const item={id:newId(),title:clean(title)||'Untitled reading',text,progress:0,updated:Date.now(),fileType};const saved=await txPut(item);await refreshBooks();loadDoc(item);status(saved?`Added “${item.title}” to your library.`:'The text is ready to read, but browser storage was unavailable.');return saved;}
   async function fromPDF(file){if(!window.pdfjsLib)throw Error('PDF import needs an internet connection to load the PDF reader library.');window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const data=new Uint8Array(await file.arrayBuffer());const pdf=await window.pdfjsLib.getDocument({data}).promise;const pages=[];for(let i=1;i<=pdf.numPages;i++){status(`Extracting PDF page ${i} of ${pdf.numPages}…`);const page=await pdf.getPage(i);const tc=await page.getTextContent();pages.push(tc.items.map(x=>x.str).join(' '));}return pages.join('\n\n');}
   // EPUB is a ZIP archive. Follow META-INF/container.xml -> OPF manifest -> spine
   // so chapters are imported in reading order, not arbitrary archive order.
@@ -280,7 +533,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }else if(['txt','md'].includes(ext))text=await file.text();
       else throw Error('Choose a file ending in .epub, .pdf, .txt, .md or .html.');
       if(!clean(text))throw Error('No readable text found. Scanned PDFs and image-only ebooks are not supported.');
-      const saved=await addDocument(file.name.replace(/\.[^.]+$/,''),text);
+      const saved=await addDocument(file.name.replace(/\.[^.]+$/,''),text,ext==='htm'?'html':ext);
       if(saved===null)return;
       status(saved?`Imported “${file.name}” successfully.`:`Opened “${file.name}”, but browser storage is unavailable. It may not be saved after you close the page.`,saved?'success':'error');
     }catch(e){
@@ -293,11 +546,21 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       importInProgress=false;
     }
   }
+  function setFocusMode(enabled){
+    document.body.classList.toggle('focus-mode',enabled);
+    const btn=$('focusBtn');
+    btn.textContent=enabled?'✕ Exit':'⛶ Focus';
+    btn.setAttribute('aria-pressed',enabled?'true':'false');
+    btn.setAttribute('aria-label',enabled?'Exit focus mode':'Expand Now Reading to focus mode');
+    if(!enabled)document.querySelector('.reader').scrollIntoView({block:'start'});
+  }
+  $('focusBtn').onclick=()=>setFocusMode(!document.body.classList.contains('focus-mode'));
   $('playBtn').onclick=togglePlayback;$('stage').onclick=togglePlayback;$('stage').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();togglePlayback();}};$('backBtn').onclick=()=>seek(-10);$('nextBtn').onclick=()=>seek(10);$('voiceBtn').onclick=narrate;
+  $('keepAwake').onchange=e=>{keepScreenOn=e.target.checked;try{localStorage.setItem('glide_keep_screen_on',String(keepScreenOn));}catch(e){}if(keepScreenOn)void requestWakeLock();else void releaseWakeLock();};
   $('wpm').oninput=e=>{wpm=Number(e.target.value);$('wpmValue').textContent=wpm+' WPM';try{localStorage.setItem('glide_wpm',String(wpm));}catch(e){}render();};
   $('addText').onclick=async()=>{const title=$('title').value;const text=$('pasteText').value;await addDocument(title,text);if(clean(text)){$('pasteText').value='';$('title').value='';}};
   $('fileInput').onchange=e=>importFile(e.target.files[0]);
-  document.addEventListener('keydown',e=>{const tag=e.target?.tagName;if(['INPUT','TEXTAREA','BUTTON'].includes(tag)||e.target?.isContentEditable)return;if(e.code==='Space'){e.preventDefault();togglePlayback();}else if(e.code==='ArrowLeft'){e.preventDefault();seek(-10);}else if(e.code==='ArrowRight'){e.preventDefault();seek(10);}});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape' && document.body.classList.contains('focus-mode')){e.preventDefault();setFocusMode(false);return;}const tag=e.target?.tagName;if(['INPUT','TEXTAREA','BUTTON'].includes(tag)||e.target?.isContentEditable)return;if(e.code==='Space'){e.preventDefault();togglePlayback();}else if(e.code==='ArrowLeft'){e.preventDefault();seek(-10);}else if(e.code==='ArrowRight'){e.preventDefault();seek(10);}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&(playing||narrating)){cancelModes();saveProgress();}});
   window.addEventListener('pagehide',()=>{if(doc&&doc.id!=='welcome'){doc.progress=index;txPut(doc);}});
   (async()=>{db=await openDB();await refreshBooks();loadDoc({id:'welcome',title:'Welcome to Glide',text:WELCOME,progress:0});status('Ready. Try Play, or import your own reading material.');})();
