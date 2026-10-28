@@ -1,0 +1,6 @@
+JSZip v3.10.1 (https://stuk.github.io/jszip/)
+Copyright (c) Stuart Knightley and contributors.
+Dual-licensed under the MIT License or GPLv3. Embedded in index.html.
+JSZip includes Pako (MIT license). See the JSZip project for license information.
+
+PDF.js 3.11.174 (Mozilla), Apache-2.0, loaded online from cdnjs; not bundled.
