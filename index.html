@@ -7,12 +7,12 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Glide Reader">
-  <title>Glide Reader — a focused speed reader (v1.3)</title>
-  <meta name="description" content="A privacy-conscious, no-subscription single-word reader for your own documents.">
+  <title>Glide Reader — One word. All focus. (v1.5)</title>
+  <meta name="description" content="One word. All focus. A private reader with adjustable focal letter, no subscription ever.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-180.png">
   <style>
-    :root { color-scheme: dark; --bg:#0c1018; --panel:#171e2a; --panel2:#202a38; --text:#ecf3fa; --muted:#9cabbc; --line:#2a3545; --hot:#fe5973; --blue:#8eb4ff; --radius:22px; }
+    :root { color-scheme: dark; --bg:#0c1018; --panel:#171e2a; --panel2:#202a38; --text:#ecf3fa; --muted:#9cabbc; --line:#2a3545; --hot:#fe5973; --focus-color:#fe5973; --blue:#8eb4ff; --radius:22px; }
     * { box-sizing:border-box; }
     html { font-size:16px; -webkit-text-size-adjust:100%; }
     body { margin:0; min-height:100svh; background:radial-gradient(ellipse at top,#192337 0%,#0c1018 57%); color:var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; }
@@ -37,7 +37,11 @@
     .stage:before { top:55px; } .stage:after { bottom:55px; }
     .wordline { display:flex;align-items:baseline;width:100%;justify-content:center;white-space:nowrap;font-family:Georgia, 'Times New Roman', serif;font-weight:650;font-size:clamp(35px,7.8vw,67px);letter-spacing:-1px;line-height:1.5; }
     .left-word { width:calc(50% - .36em); text-align:right; }
-    .pivot { color:var(--hot);width:.72em;text-align:center; }
+    /* The central pivot maintains a constant X position, even when its letter
+       varies with word length or the user's recognition-point adjustment. */
+    .pivot { color:var(--focus-color);width:.72em;text-align:center;flex-shrink:0; }
+    .stage.no-highlight .pivot { color:var(--text); }
+    .stage.no-highlight::before,.stage.no-highlight::after { display:none; }
     .right-word { width:calc(50% - .36em);text-align:left; }
     .stage-help { font-size:12px;color:#8497ae;position:absolute;bottom:24px; }
     .track { height:5px;background:#303d50;border-radius:6px;overflow:hidden; }
@@ -56,6 +60,26 @@
     .speed label { font-size:13px;color:var(--muted);white-space:nowrap; }
     input[type=range] { width:100%; accent-color:var(--hot); min-width:0; }
     .speedvalue { min-width:88px;text-align:right;font-size:13px;font-weight:750; font-variant-numeric:tabular-nums; }
+    .reading-settings { margin-top:13px;border-top:1px solid var(--line);padding-top:12px; flex-shrink:0; }
+    .reading-settings summary { color:#cad9ed;cursor:pointer;font-size:13px;font-weight:750;list-style-position:inside;min-height:30px; }
+    .reading-settings summary:focus-visible { outline:2px solid var(--blue);outline-offset:3px;border-radius:6px; }
+    .settings-content { margin-top:12px;display:grid;gap:16px;background:#111a26;border:1px solid #344155;border-radius:13px;padding:14px; }
+    .settings-line { display:flex;justify-content:space-between;align-items:center;gap:15px; }
+    .settings-line label {font-size:13px;color:#dce7f5;}
+    .settings-line input[type=checkbox] {height:19px;width:19px;accent-color:var(--hot);}
+    .color-settings {display:flex;flex-direction:column;gap:10px;}
+    .setting-label {font-size:13px;color:#dce7f5;}
+    .color-row {display:flex;align-items:center;flex-wrap:wrap;gap:11px;}
+    .color-swatch {width:30px;height:30px;border-radius:50%;border:2px solid #314157;position:relative;padding:0;flex:none;}
+    .color-swatch[aria-pressed=true] {outline:2px solid #f0f5fb;outline-offset:3px;}
+    .color-settings.is-disabled {opacity:.4;pointer-events:none;}
+    .custom-color {margin-left:4px;display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);}
+    #customColor {height:32px;width:43px;min-width:43px;border:1px solid #56677d;border-radius:8px;background:#1d2838;padding:2px;cursor:pointer;}
+    .recognition-control {display:grid;gap:8px;}
+    .recognition-head {display:flex;align-items:center;justify-content:space-between;gap:9px;}
+    .recognition-value {font-size:12px;font-variant-numeric:tabular-nums;color:#a6c2ee;white-space:nowrap;}
+    .recognition-guide {display:flex;justify-content:space-between;color:var(--muted);font-size:11px;}
+    .settings-hint {color:var(--muted);font-size:11px;line-height:1.45;margin:0;}
     .lower { display:grid;grid-template-columns:1.06fr .94fr;gap:16px;margin-top:16px;align-items:start; }
     .pad { padding:23px; }
     h2 { margin:5px 0 17px;font-size:21px;letter-spacing:-.5px; }
@@ -72,25 +96,31 @@
     .row { display:flex;justify-content:space-between;align-items:center;gap:10px; }
     .library { display:grid;gap:9px;max-height:350px;overflow-y:auto; }
     .book { background:#1e2a3a;border:1px solid #344154;border-radius:13px;padding:12px;display:flex;align-items:center;gap:8px; }
-    /* The miniature file icons are also accessible format pickers. Existing v1.2
-       entries have no recorded file extension; they can be labeled here without
-       re-importing or losing reading progress. */
-    .book-icon-wrap { position:relative; flex:none; width:40px; height:45px; border-radius:7px;
-      border:1px solid #66839b; background:#26394d; color:#dceafa; overflow:hidden; }
-    .book-icon-wrap::after { content:""; position:absolute; right:0; top:0; width:11px; height:11px;
-      background:#8396a9; clip-path:polygon(0 0,100% 100%,100% 0); pointer-events:none; }
-    .book-icon-wrap.kind-pdf {background:#562936;border-color:#b65d6d;color:#ffd7e2;}
-    .book-icon-wrap.kind-epub {background:#20463d;border-color:#638e7e;color:#d0f8e4;}
-    .book-icon-wrap.kind-txt,.book-icon-wrap.kind-md {background:#293c51;border-color:#7188a4;color:#daedff;}
-    .book-icon-wrap.kind-html {background:#594326;border-color:#a78a58;color:#fff0c5;}
-    .book-icon-wrap.kind-note {background:#3a3355;border-color:#8276b0;color:#e4dcff;}
-    .book-type-select { appearance:none; -webkit-appearance:none; width:100%;height:100%;margin:0;padding:17px 1px 3px;
-      text-align:center;background:transparent;color:inherit;border:0;outline-offset:-3px;cursor:pointer;
-      font-size:9px;font-weight:900;line-height:1;letter-spacing:-.25px;}
-    .book-type-select option {color:#111a28;background:white;}
-    .book-main { background:none;color:var(--text);border:0;text-align:left;padding:2px;flex:1;min-width:0; }
+    /* Covers are compressed thumbnails stored alongside each book in IndexedDB.
+       Old books retain their original content and progress, and offer Add cover. */
+    .book-cover { flex:none; width:46px; height:65px; display:flex;align-items:center;justify-content:center;
+      overflow:hidden;position:relative; padding:0;border:1px solid #647e99;border-radius:6px;
+      background:#26394d;color:#dceafa; cursor:pointer; }
+    .book-cover:focus-visible {outline:2px solid #9cbbff;outline-offset:3px;}
+    .book-cover.kind-pdf {background:#562936;border-color:#b65d6d;color:#ffd7e2;}
+    .book-cover.kind-epub {background:#20463d;border-color:#638e7e;color:#d0f8e4;}
+    .book-cover.kind-txt,.book-cover.kind-md {background:#293c51;border-color:#7188a4;color:#daedff;}
+    .book-cover.kind-html {background:#594326;border-color:#a78a58;color:#fff0c5;}
+    .book-cover.kind-note {background:#3a3355;border-color:#8276b0;color:#e4dcff;}
+    .book-cover:not(.has-cover)::after {content:"";position:absolute;right:0;top:0;width:12px;height:12px;
+      background:#8ba2b8;clip-path:polygon(0 0,100% 100%,100% 0);}
+    .book-cover img {width:100%;height:100%;object-fit:cover;display:block;}
+    .cover-fallback {font-size:10px;font-weight:900;letter-spacing:-.3px;}
+    .book-details {flex:1;min-width:0;display:grid;gap:5px;}
+    .book-main { background:none;color:var(--text);border:0;text-align:left;padding:2px 0;min-width:0;cursor:pointer; }
     .book-name {font-size:13px;font-weight:750;text-overflow:ellipsis;overflow:hidden;white-space:nowrap;display:block;}
-    .book-sub {font-size:11px;color:var(--muted);margin-top:5px;display:block;}
+    .book-sub {font-size:11px;color:var(--muted);margin-top:4px;display:block;}
+    .book-meta {display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
+    .book-type-select {max-width:70px;color:#c0d5ed;background:#2e3b4e;border:1px solid #495b70;
+      border-radius:6px;padding:2px 4px;font-size:10px;letter-spacing:.1px;}
+    .book-cover-hint {font-size:10px;color:#a9c5e9;}
+    .book-cover-hint::before {content:"▣ ";}
+    .book-cover.has-cover + .book-details .book-cover-hint {color:#92a7be;}
     .trash {padding:9px;background:#293547;border:0;border-radius:10px;color:#c2d3e7;font-size:14px;}
     .empty {padding:21px;text-align:center;border:1px dashed #43536b;border-radius:12px;color:var(--muted);font-size:13px;}
     #status {min-height:20px;color:#b4c8e2;font-size:12px;margin-top:10px;line-height:1.5; }
@@ -122,6 +152,15 @@
     body.focus-mode .controls {flex-shrink:0;gap:8px;}
     body.focus-mode .awake-row {display:none;}
     body.focus-mode .speed {flex-shrink:0;margin-top:15px;padding-top:13px;}
+    body.focus-mode .reading-settings {margin-top:10px;}
+    /* An expanded settings panel can scroll in Focus mode on smaller phones;
+       the regular, collapsed reader retains its uninterrupted viewport. */
+    body.focus-mode.focus-settings-open .reader {overflow-y:auto;}
+    body.focus-mode.focus-settings-open .stage {flex:0 0 auto;min-height:145px;height:24vh;}
+    body.focus-mode.focus-settings-open .stage:before {top:16%;}
+    body.focus-mode.focus-settings-open .stage:after {bottom:16%;}
+    body.focus-mode.focus-settings-open .stage-help {bottom:4%;}
+    body.focus-mode.focus-settings-open .settings-content {padding:11px;}
     @media (max-width:430px) {
       .reader-actions {gap:6px;}
       .focus-btn {padding:8px 10px;}
@@ -161,8 +200,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <div class="shell">
   <header class="top">
     <div class="mark" aria-hidden="true">g<b>.</b></div>
-    <div><div class="brand">glide reader</div><div class="sub">Read one word at a time. Your way.</div></div>
-    <div class="local">No subscription</div>
+    <div><div class="brand">glide reader</div><div class="sub">One word. All focus.</div></div>
+    <div class="local">No subscription ever</div>
   </header>
 
   <section class="card reader" aria-label="Speed reader">
@@ -184,12 +223,39 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <button class="control primary" id="playBtn">▶ Play</button>
       <button class="control" id="nextBtn" title="Forward 10 words" aria-label="Forward 10 words">10 ↷</button>
       <button class="control voice" id="voiceBtn" title="Read aloud using device voice">♫ Narrate</button>
+      <button class="control voice replay" id="replayBtn" title="Replay from the beginning of this sentence" aria-label="Replay sentence from the start">↶ Sentence</button>
     </div>
     <div class="awake-row">
       <label for="keepAwake"><input type="checkbox" id="keepAwake" checked>Keep screen on while reading</label>
       <span id="awakeState" role="status" aria-live="polite">On during Play / Narrate, when supported</span>
     </div>
     <div class="speed"><label for="wpm">Reading speed</label><input type="range" id="wpm" min="100" max="1000" step="25" value="300"><span class="speedvalue" id="wpmValue">300 WPM</span></div>
+    <details class="reading-settings" id="readingSettings">
+      <summary>Focal letter &amp; recognition point</summary>
+      <div class="settings-content">
+        <div class="settings-line">
+          <label for="highlightEnabled">Highlight focal letter</label>
+          <input type="checkbox" id="highlightEnabled" checked>
+        </div>
+        <div class="color-settings" id="colorSettings">
+          <div class="setting-label" id="highlightColorLabel">Highlight colour</div>
+          <div class="color-row" role="group" aria-labelledby="highlightColorLabel">
+            <button class="color-swatch" type="button" data-color="#fe5973" style="background:#fe5973" aria-label="Coral highlight"></button>
+            <button class="color-swatch" type="button" data-color="#ffd166" style="background:#ffd166" aria-label="Yellow highlight"></button>
+            <button class="color-swatch" type="button" data-color="#59d9be" style="background:#59d9be" aria-label="Mint highlight"></button>
+            <button class="color-swatch" type="button" data-color="#8eb4ff" style="background:#8eb4ff" aria-label="Blue highlight"></button>
+            <button class="color-swatch" type="button" data-color="#eea2fb" style="background:#eea2fb" aria-label="Lilac highlight"></button>
+            <label class="custom-color" for="customColor">Custom <input type="color" id="customColor" value="#fe5973" aria-label="Custom highlight colour"></label>
+          </div>
+        </div>
+        <div class="recognition-control">
+          <div class="recognition-head"><label class="setting-label" for="recognitionOffset">Recognition point</label><output for="recognitionOffset" class="recognition-value" id="recognitionValue">Standard</output></div>
+          <input type="range" id="recognitionOffset" min="-2" max="2" step="1" value="0" aria-label="Move focal letter earlier or later in each word">
+          <div class="recognition-guide"><span>← Earlier</span><span>Standard</span><span>Later →</span></div>
+          <p class="settings-hint">Longer words naturally use a later letter. Move the recognition point up to two letters in either direction; the chosen letter stays centred on screen. Short words have fewer positions.</p>
+        </div>
+      </div>
+    </details>
   </section>
 
   <div class="lower">
@@ -207,11 +273,13 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     <section class="card pad" aria-label="Reading library">
       <div class="row"><div><div class="eyebrow">Saved on this device</div><h2>My library</h2></div><span class="chip" id="libraryCount">0 items</span></div>
       <div class="library" id="libraryList"><div class="empty">Your library is loading…</div></div>
-      <p>Tap a document icon to choose its file format. Older imports may show FILE until you set their type.</p>
+      <input id="coverFileInput" type="file" accept=".epub,.pdf,.jpg,.jpeg,.png,.webp,.gif,application/epub+zip,application/pdf,image/*" hidden aria-label="Choose an EPUB, PDF, or image for the cover">
+      <p class="hint">Tap a book's miniature cover to add or replace its artwork. For older EPUBs or PDFs, choose the original book file again—your reading position is preserved.</p>
+      <p>Use the small format menu below a book title to label older FILE entries as EPUB, PDF, or another type.</p>
       <p>Play/Pause: Space on your computer. Back/forward: ← / →. Tap the reader on your phone.</p>
     </section>
   </div>
-  <div class="footer">Glide Reader v1.3 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
+  <div class="footer">Glide Reader v1.5 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
 </div>
 <script>
 (() => {
@@ -229,6 +297,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $('wpm').value = String(wpm); $('wpmValue').textContent = wpm + ' WPM';
   const tokenize = str => (str || '').match(/\S+/g) || [];
   const clean = str => (str || '').replace(/\s+/g, ' ').trim();
+  let highlightEnabled=true, highlightColor='#fe5973', recognitionOffset=0;
+  try {
+    highlightEnabled=localStorage.getItem('glide_highlight_enabled')!=='false';
+    const savedColor=localStorage.getItem('glide_focus_color');
+    if(savedColor && /^#[0-9a-f]{6}$/i.test(savedColor))highlightColor=savedColor;
+    const savedOffset=Number(localStorage.getItem('glide_recognition_offset'));
+    recognitionOffset=Number.isInteger(savedOffset)?Math.max(-2,Math.min(2,savedOffset)):0;
+  }catch(e){}
+  function saveFocusPreference(key,value){try{localStorage.setItem(key,String(value));}catch(e){}}
+  function applyFocusSettings(){
+    $('highlightEnabled').checked=highlightEnabled;
+    $('colorSettings').classList.toggle('is-disabled',!highlightEnabled);
+    $('colorSettings').querySelectorAll('button').forEach(btn=>{
+      btn.setAttribute('aria-pressed',String(btn.dataset.color===highlightColor));
+      btn.disabled=!highlightEnabled;
+    });
+    $('customColor').disabled=!highlightEnabled;
+    $('customColor').value=highlightColor;
+    $('stage').classList.toggle('no-highlight',!highlightEnabled);
+    document.documentElement.style.setProperty('--focus-color',highlightColor);
+    $('recognitionOffset').value=String(recognitionOffset);
+    const label=recognitionOffset===0?'Standard':`${Math.abs(recognitionOffset)} letter${Math.abs(recognitionOffset)===1?'':'s'} ${recognitionOffset<0?'earlier':'later'}`;
+    $('recognitionValue').textContent=label;
+    $('recognitionOffset').setAttribute('aria-valuetext',label);
+  }
   const status = (msg, kind='info') => { $('status').textContent = msg; $('status').dataset.kind = kind; };
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36)+Math.random().toString(36).slice(2));
   function openDB() { return new Promise(resolve => { try {const req = indexedDB.open('glide_reader_v1',1); req.onupgradeneeded = () => {req.result.createObjectStore('docs',{keyPath:'id'});}; req.onsuccess = () => resolve(req.result); req.onerror = () => resolve(null);} catch(e){resolve(null);} }); }
@@ -242,6 +335,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(candidate==='text')return 'txt';
     return fileTypes.includes(candidate)?candidate:'file';
   }
+  const safeCover = src => typeof src==='string' && /^data:image\/(?:jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(src);
+  let coverTargetId=null;
+  function chooseCover(item){
+    coverTargetId=item.id;
+    const input=$('coverFileInput'); input.value=''; input.click();
+  }
   async function refreshBooks(){
     books=(await txAll()).sort((a,b)=>(b.updated||0)-(a.updated||0));
     const list=$('libraryList');list.replaceChildren();
@@ -253,10 +352,28 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     for(const item of books){
       const line=document.createElement('div');line.className='book';
       const kind=normalizeFileType(item);
-      const icon=document.createElement('div');icon.className='book-icon-wrap kind-'+kind;
+      const cover=document.createElement('button');cover.type='button';
+      const hasCover=safeCover(item.cover);
+      cover.className='book-cover kind-'+kind+(hasCover?' has-cover':'');
+      cover.setAttribute('aria-label',`${hasCover?'Replace':'Add'} cover for ${item.title}`);
+      cover.title=`${hasCover?'Replace':'Add'} cover for “${item.title}” (choose original EPUB, PDF, or picture)`;
+      if(hasCover){
+        const img=document.createElement('img');img.src=item.cover;img.alt='';img.loading='lazy';cover.append(img);
+      }else{
+        const type=document.createElement('span');type.className='cover-fallback';type.textContent=kind.toUpperCase();cover.append(type);
+      }
+      cover.onclick=()=>chooseCover(item);
+      const details=document.createElement('div');details.className='book-details';
+      const btn=document.createElement('button');btn.type='button';btn.className='book-main';
+      const name=document.createElement('span');name.className='book-name';name.textContent=item.title;
+      const sub=document.createElement('span');sub.className='book-sub';
+      const count=tokenize(item.text).length;
+      sub.textContent=`${count.toLocaleString()} words · ${Math.floor(100*(item.progress||0)/Math.max(1,count))}% complete`;
+      btn.append(name,sub);btn.onclick=()=>loadDoc(item);
+      const meta=document.createElement('div');meta.className='book-meta';
       const typeSelect=document.createElement('select');typeSelect.className='book-type-select';
-      typeSelect.title='Choose file type';
-      typeSelect.setAttribute('aria-label',`File type for ${item.title}`);
+      typeSelect.title='Choose file format for older books';
+      typeSelect.setAttribute('aria-label',`File format for ${item.title}`);
       for(const option of fileTypes){const el=document.createElement('option');el.value=option;
         el.textContent=option==='file'?'FILE':option.toUpperCase();typeSelect.append(el);}
       typeSelect.value=kind;
@@ -264,18 +381,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         const newType=typeSelect.value;
         const changed={...item,fileType:newType};
         const saved=await txPut(changed);
+        if(!saved){status('Could not save the file type to this device.','error');typeSelect.value=kind;return;}
         if(doc?.id===item.id)doc.fileType=newType;
-        if(!saved){status('Could not save the file type to this device.','error');return;}
-        icon.className='book-icon-wrap kind-'+newType;
-        status(`File icon for “${item.title}” set to ${newType.toUpperCase()}.`,'success');
+        await refreshBooks();
+        status(`Format for “${item.title}” set to ${newType.toUpperCase()}.`,'success');
       };
-      icon.append(typeSelect);
-      const btn=document.createElement('button');btn.className='book-main';
-      const name=document.createElement('span');name.className='book-name';name.textContent=item.title;
-      const sub=document.createElement('span');sub.className='book-sub';
-      const count=tokenize(item.text).length;
-      sub.textContent=`${count.toLocaleString()} words · ${Math.floor(100*(item.progress||0)/Math.max(1,count))}% complete`;
-      btn.append(name,sub);btn.onclick=()=>loadDoc(item);
+      const hint=document.createElement('span');hint.className='book-cover-hint';
+      hint.textContent=hasCover?'Change cover':'Add cover';
+      meta.append(typeSelect,hint);details.append(btn,meta);
       const del=document.createElement('button');del.className='trash';del.textContent='✕';
       del.title='Delete this document';del.setAttribute('aria-label',`Delete ${item.title}`);
       del.onclick=async()=>{
@@ -284,10 +397,43 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         if(doc?.id===item.id)loadDoc({id:'welcome',title:'Welcome to Glide',text:WELCOME,progress:0,fileType:'note'});
         await refreshBooks();
       };
-      line.append(icon,btn,del);list.append(line);
+      line.append(cover,details,del);list.append(line);
     }
   }
-  function displayWord(word){const a=$('wordLeft'),b=$('wordPivot'),c=$('wordRight');let chars=[...word];if(!chars.length){a.textContent='';b.textContent='';c.textContent='';return;}const letters=chars.map((x,i)=>/[\p{L}\p{N}]/u.test(x)?i:-1).filter(i=>i>=0);const logical=letters.length<=1?0:letters.length<=5?1:letters.length<=9?2:Math.floor(letters.length*.35);const p=letters.length?letters[Math.min(logical,letters.length-1)]:0;a.textContent=chars.slice(0,p).join('');b.textContent=chars[p];c.textContent=chars.slice(p+1).join('');}
+  async function setCoverOnBook(id,cover,kind){
+    if(!safeCover(cover))throw Error('Could not create a supported cover image.');
+    // Retrieve the freshest reading position before updating a cover, so never
+    // replace a book with stale progress from a list generated earlier.
+    const current=(await txAll()).find(x=>x.id===id);
+    if(!current)throw Error('This book is no longer in your library.');
+    const changed={...current,cover,fileType:current.fileType==='file'&&kind?kind:current.fileType};
+    if(doc?.id===id){
+      changed.progress=index;
+      doc.cover=cover;
+      doc.fileType=changed.fileType;
+    }
+    if(!(await txPut(changed)))throw Error('The thumbnail could not be saved (device storage may be full).');
+    await refreshBooks();
+  }
+  function focusIndexFor(word){
+    const chars=[...word];
+    // Identify just letters and digits: quotes, dashes and trailing punctuation
+    // do not count towards the recognition point.
+    const letters=chars.map((ch,i)=>/[\p{L}\p{N}]/u.test(ch)?i:-1).filter(i=>i>=0);
+    if(!letters.length)return 0;
+    const count=letters.length;
+    const base=count<=1?0:count<=5?1:count<=9?2:Math.floor(count*.35);
+    return letters[Math.max(0,Math.min(count-1,base+recognitionOffset))];
+  }
+  function displayWord(word){
+    const a=$('wordLeft'),b=$('wordPivot'),c=$('wordRight');
+    const chars=[...word];
+    if(!chars.length){a.textContent='';b.textContent='';c.textContent='';return;}
+    const p=focusIndexFor(word);
+    a.textContent=chars.slice(0,p).join('');
+    b.textContent=chars[p];
+    c.textContent=chars.slice(p+1).join('');
+  }
   function render(){const current=words[index]||'Done';displayWord(current);$('docName').textContent=doc?.title||'Welcome';$('wordCount').textContent=words.length.toLocaleString()+' words';const currentNum=Math.min(index+1,words.length);$('position').textContent=`${currentNum.toLocaleString()} of ${words.length.toLocaleString()} words`;$('progressFill').style.width=(100*currentNum/Math.max(1,words.length))+'%';const remain=Math.max(0,words.length-currentNum);const secs=Math.round(remain/wpm*60);$('timeLeft').textContent=secs>=60?`${Math.ceil(secs/60)} min remaining`:`${secs} sec remaining`;$('playBtn').textContent=playing?'❚❚ Pause':'▶ Play';$('voiceBtn').textContent=narrating?'■ Stop voice':'♫ Narrate';}
   function setAwakeMessage(msg){$('awakeState').textContent=msg;}
   async function releaseWakeLock(){
@@ -340,6 +486,23 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   function tick(){if(!playing)return;const wait=wordDuration(words[index]||'');timer=setTimeout(()=>{if(!playing)return;if(index>=words.length-1){playing=false;render();saveProgress();status('Finished! You can restart with the back button.');return;}index++;render();if(index%9===0)saveProgress();tick();},wait);}
   function togglePlayback(){if(narrating)cancelModes();if(!words.length)return;if(playing){cancelModes();saveProgress();return;}if(index>=words.length-1)index=0;playing=true;render();void requestWakeLock();tick();}
   function seek(n){cancelModes();index=Math.max(0,Math.min(words.length-1,index+n));render();saveProgress();}
+  function sentenceStart(i){
+    // Sentence boundaries are detected in the imported, whitespace-tokenized
+    // text and include common trailing closing quotes and parentheses.
+    for(let j=Math.max(0,i)-1;j>=0;j--){
+      if(/[.!?][”’"')\]]*$/.test(words[j]))return j+1;
+    }
+    return 0;
+  }
+  function replaySentence(){
+    if(!words.length)return;
+    const wasPlaying=playing,wasNarrating=narrating;
+    let at=sentenceStart(index);
+    if(at===index && at>0)at=sentenceStart(at-1);
+    cancelModes();index=at;render();saveProgress();
+    if(wasPlaying){playing=true;render();void requestWakeLock();tick();}
+    else if(wasNarrating)narrate();
+  }
   // iPhone Safari frequently fails to speak book-length utterances. Read short
   // chunks instead, keeping the first speak() directly inside the tap handler.
   function speechChunk(start){
@@ -427,8 +590,138 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     speakNextChunk(session);
     status('Starting iPhone voice…');
   }
-  async function addDocument(title,text,fileType='note'){text=clean(text);if(!text){status('Please enter or import some text first.','error');return null;}if(tokenize(text).length>350000){status('This version supports books up to 350,000 words.','error');return null;}const item={id:newId(),title:clean(title)||'Untitled reading',text,progress:0,updated:Date.now(),fileType};const saved=await txPut(item);await refreshBooks();loadDoc(item);status(saved?`Added “${item.title}” to your library.`:'The text is ready to read, but browser storage was unavailable.');return saved;}
-  async function fromPDF(file){if(!window.pdfjsLib)throw Error('PDF import needs an internet connection to load the PDF reader library.');window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';const data=new Uint8Array(await file.arrayBuffer());const pdf=await window.pdfjsLib.getDocument({data}).promise;const pages=[];for(let i=1;i<=pdf.numPages;i++){status(`Extracting PDF page ${i} of ${pdf.numPages}…`);const page=await pdf.getPage(i);const tc=await page.getTextContent();pages.push(tc.items.map(x=>x.str).join(' '));}return pages.join('\n\n');}
+  async function thumbnailFromBlob(blob){
+    if(!blob || !blob.size || blob.size>10*1024*1024)return null;
+    const url=URL.createObjectURL(blob);
+    try{
+      const img=new Image();
+      await new Promise((resolve,reject)=>{
+        img.onload=resolve;img.onerror=()=>reject(Error('Cover image could not be decoded.'));
+        img.src=url;
+      });
+      if(!img.naturalWidth||!img.naturalHeight)return null;
+      const ratio=Math.min(1,180/img.naturalWidth,260/img.naturalHeight);
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(img.naturalWidth*ratio));
+      canvas.height=Math.max(1,Math.round(img.naturalHeight*ratio));
+      const ctx=canvas.getContext('2d');if(!ctx)return null;
+      ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+      return canvas.toDataURL('image/jpeg',0.76);
+    }finally{URL.revokeObjectURL(url);}
+  }
+  async function thumbnailFromImageFile(file){
+    if(!/^image\/(?:png|jpeg|webp|gif)$/i.test(file.type) && !/\.(png|jpe?g|webp|gif)$/i.test(file.name))
+      throw Error('Choose a JPG, PNG, WEBP, GIF, EPUB, or PDF file.');
+    const value=await thumbnailFromBlob(file);
+    if(!value)throw Error('Could not create a thumbnail from this image.');
+    return value;
+  }
+  async function thumbnailFromPDFPage(page){
+    try{
+      const base=page.getViewport({scale:1});
+      const scale=Math.min(1,180/base.width,260/base.height);
+      const viewport=page.getViewport({scale});
+      const canvas=document.createElement('canvas');
+      canvas.width=Math.max(1,Math.round(viewport.width));
+      canvas.height=Math.max(1,Math.round(viewport.height));
+      const ctx=canvas.getContext('2d',{alpha:false});
+      if(!ctx)return null;
+      await page.render({canvasContext:ctx,viewport,background:'#ffffff'}).promise;
+      return canvas.toDataURL('image/jpeg',0.76);
+    }catch(e){console.warn('PDF cover could not be rendered:',e);return null;}
+  }
+  async function extractPDFCover(file){
+    if(!window.pdfjsLib)throw Error('PDF previews need an internet connection to load the PDF reader.');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+    try{return await thumbnailFromPDFPage(await pdf.getPage(1));}
+    finally{if(typeof pdf.destroy==='function')await pdf.destroy();}
+  }
+  async function extractEPUBCoverFromPackage(zip,opf,opfPath,manifest){
+    // EPUB3: properties="cover-image". EPUB2: <meta name="cover" content="id">.
+    // Older exports may use a cover item in <guide> or a cover-like filename.
+    let candidate=[...manifest.values()].find(x=>/\bcover-image\b/.test(x.properties));
+    if(!candidate){
+      const meta=epubElements(opf,'meta').find(x=>x.getAttribute('name')?.toLowerCase()==='cover');
+      candidate=manifest.get(meta?.getAttribute('content'));
+    }
+    const entries=[...manifest.values()];
+    if(!candidate)candidate=entries.find(x=>/^image\/(?:jpeg|png|webp|gif)$/i.test(x.media)&&/(?:^|[\/_.-])cover(?:[\/_.-]|$)/i.test(x.href));
+    if(!candidate){
+      const refs=epubElements(opf,'reference');
+      const coverRef=refs.find(x=>/cover/i.test(x.getAttribute('type')||''));
+      if(coverRef){
+        const htmlPath=resolveEpubHref(opfPath,coverRef.getAttribute('href'));
+        const htmlPart=epubZipEntry(zip,htmlPath);
+        if(htmlPart){
+          const html=new DOMParser().parseFromString(await htmlPart.async('string'),'text/html');
+          const src=html.querySelector('img[src]')?.getAttribute('src');
+          if(src){const imgPath=resolveEpubHref(htmlPath,src);const match=entries.find(x=>resolveEpubHref(opfPath,x.href)===imgPath);if(match)candidate=match;}
+        }
+      }
+    }
+    if(!candidate){
+      const imgs=entries.filter(x=>/^image\/(?:jpeg|png|webp|gif)$/i.test(x.media));
+      if(imgs.length===1)candidate=imgs[0];
+    }
+    if(!candidate || !/^image\/(?:jpeg|png|webp|gif)$/i.test(candidate.media))return null;
+    const path=resolveEpubHref(opfPath,candidate.href);
+    const entry=epubZipEntry(zip,path);
+    if(!entry || entry._data?.uncompressedSize>10*1024*1024)return null;
+    try{
+      const mime=candidate.media==='image/jpg'?'image/jpeg':candidate.media;
+      return await thumbnailFromBlob(new Blob([await entry.async('uint8array')],{type:mime}));
+    }catch(e){console.warn('EPUB cover could not be decoded:',e);return null;}
+  }
+  async function extractEPUBCover(file){
+    if(!window.JSZip)throw Error('EPUB support has not loaded. Reopen Glide Reader.');
+    const zip=await window.JSZip.loadAsync(await file.arrayBuffer());
+    const container=epubZipEntry(zip,'META-INF/container.xml');if(!container)return null;
+    const xml=parseEpubXml(await container.async('string'),'container');
+    const opfPath=epubElements(xml,'rootfile')[0]?.getAttribute('full-path');
+    const opfFile=epubZipEntry(zip,opfPath);if(!opfFile)return null;
+    const opf=parseEpubXml(await opfFile.async('string'),'package');
+    const manifest=new Map();
+    for(const item of epubElements(opf,'item')){
+      const id=item.getAttribute('id'),href=item.getAttribute('href');
+      if(id&&href)manifest.set(id,{href,media:item.getAttribute('media-type')||'',properties:item.getAttribute('properties')||''});
+    }
+    return extractEPUBCoverFromPackage(zip,opf,opfPath,manifest);
+  }
+  async function assignCoverFile(file){
+    const id=coverTargetId;coverTargetId=null;
+    if(!file||!id)return;
+    $('coverFileInput').setAttribute('aria-busy','true');
+    status(`Preparing cover from “${file.name}”…`);
+    try{
+      const ext=file.name.split('.').pop().toLowerCase();
+      const image=['png','jpg','jpeg','webp','gif'].includes(ext)||file.type.startsWith('image/');
+      const cover=image?await thumbnailFromImageFile(file):
+                  ext==='epub'?await extractEPUBCover(file):
+                  ext==='pdf'?await extractPDFCover(file):null;
+      if(!cover)throw Error('No usable cover image was found. Try choosing a JPG/PNG image instead.');
+      await setCoverOnBook(id,cover,image?'':ext);
+      status('Cover updated. Your book and reading position were not changed.','success');
+    }catch(e){status('Cover not updated: '+(e?.message||String(e)),'error');}
+    finally{$('coverFileInput').value='';$('coverFileInput').removeAttribute('aria-busy');}
+  }
+  async function addDocument(title,text,fileType='note',cover=null){text=clean(text);if(!text){status('Please enter or import some text first.','error');return null;}if(tokenize(text).length>350000){status('This version supports books up to 350,000 words.','error');return null;}const item={id:newId(),title:clean(title)||'Untitled reading',text,progress:0,updated:Date.now(),fileType,cover:safeCover(cover)?cover:null};const saved=await txPut(item);await refreshBooks();loadDoc(item);status(saved?`Added “${item.title}” to your library.`:'The text is ready to read, but browser storage was unavailable.');return saved;}
+  async function fromPDF(file){
+    if(!window.pdfjsLib)throw Error('PDF import needs an internet connection to load the PDF reader library.');
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    const pdf=await window.pdfjsLib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+    const pages=[];let cover=null;
+    try{
+      for(let i=1;i<=pdf.numPages;i++){
+        status(`Extracting PDF page ${i} of ${pdf.numPages}…`);
+        const page=await pdf.getPage(i);
+        if(i===1)cover=await thumbnailFromPDFPage(page);
+        const tc=await page.getTextContent();pages.push(tc.items.map(x=>x.str).join(' '));
+      }
+    }finally{if(typeof pdf.destroy==='function')await pdf.destroy();}
+    return {text:pages.join('\n\n'),cover};
+  }
   // EPUB is a ZIP archive. Follow META-INF/container.xml -> OPF manifest -> spine
   // so chapters are imported in reading order, not arbitrary archive order.
   function epubElements(root,name){return [...root.getElementsByTagName('*')].filter(el => el.localName === name);}
@@ -513,7 +806,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         throw Error('No readable text was found. This ebook may be DRM-protected or contain only images; protected EPUBs cannot be imported.');
       throw Error('No readable chapter text was found. Please check that the ebook is a regular, text-based EPUB.');
     }
-    return pages.join('\n\n');
+    let cover=null;
+    try{cover=await extractEPUBCoverFromPackage(zip,opf,opfPath,manifest);}catch(e){console.warn('EPUB cover not available:',e);}
+    return {text:pages.join('\n\n'),cover};
   }
   let importInProgress=false;
   async function importFile(file){
@@ -523,9 +818,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     status(`Importing ${file.name}…`);
     try{
       const ext=file.name.split('.').pop().toLowerCase();
-      let text;
-      if(ext==='pdf')text=await fromPDF(file);
-      else if(ext==='epub')text=await fromEPUB(file);
+      let text,cover=null;
+      if(ext==='pdf'){const parsed=await fromPDF(file);text=parsed.text;cover=parsed.cover;}
+      else if(ext==='epub'){const parsed=await fromEPUB(file);text=parsed.text;cover=parsed.cover;}
       else if(['htm','html'].includes(ext)){
         const html=new DOMParser().parseFromString(await file.text(),'text/html');
         html.querySelectorAll('script,style,noscript,nav').forEach(el=>el.remove());
@@ -533,7 +828,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       }else if(['txt','md'].includes(ext))text=await file.text();
       else throw Error('Choose a file ending in .epub, .pdf, .txt, .md or .html.');
       if(!clean(text))throw Error('No readable text found. Scanned PDFs and image-only ebooks are not supported.');
-      const saved=await addDocument(file.name.replace(/\.[^.]+$/,''),text,ext==='htm'?'html':ext);
+      const saved=await addDocument(file.name.replace(/\.[^.]+$/,''),text,ext==='htm'?'html':ext,cover);
       if(saved===null)return;
       status(saved?`Imported “${file.name}” successfully.`:`Opened “${file.name}”, but browser storage is unavailable. It may not be saved after you close the page.`,saved?'success':'error');
     }catch(e){
@@ -555,11 +850,39 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(!enabled)document.querySelector('.reader').scrollIntoView({block:'start'});
   }
   $('focusBtn').onclick=()=>setFocusMode(!document.body.classList.contains('focus-mode'));
-  $('playBtn').onclick=togglePlayback;$('stage').onclick=togglePlayback;$('stage').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();togglePlayback();}};$('backBtn').onclick=()=>seek(-10);$('nextBtn').onclick=()=>seek(10);$('voiceBtn').onclick=narrate;
+  $('readingSettings').addEventListener('toggle',()=>{
+    document.body.classList.toggle('focus-settings-open',$('readingSettings').open);
+  });
+  $('highlightEnabled').onchange=e=>{
+    highlightEnabled=e.target.checked;
+    saveFocusPreference('glide_highlight_enabled',highlightEnabled);
+    applyFocusSettings();render();
+  };
+  $('colorSettings').querySelectorAll('.color-swatch').forEach(btn=>{
+    btn.onclick=()=>{
+      highlightColor=btn.dataset.color;
+      saveFocusPreference('glide_focus_color',highlightColor);
+      applyFocusSettings();render();
+    };
+  });
+  $('customColor').oninput=e=>{
+    if(!/^#[0-9a-f]{6}$/i.test(e.target.value))return;
+    highlightColor=e.target.value.toLowerCase();
+    saveFocusPreference('glide_focus_color',highlightColor);
+    applyFocusSettings();render();
+  };
+  $('recognitionOffset').oninput=e=>{
+    recognitionOffset=Math.max(-2,Math.min(2,Number(e.target.value)||0));
+    saveFocusPreference('glide_recognition_offset',recognitionOffset);
+    applyFocusSettings();render();
+  };
+  applyFocusSettings();
+  $('playBtn').onclick=togglePlayback;$('stage').onclick=togglePlayback;$('stage').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();togglePlayback();}};$('backBtn').onclick=()=>seek(-10);$('nextBtn').onclick=()=>seek(10);$('replayBtn').onclick=replaySentence;$('voiceBtn').onclick=narrate;
   $('keepAwake').onchange=e=>{keepScreenOn=e.target.checked;try{localStorage.setItem('glide_keep_screen_on',String(keepScreenOn));}catch(e){}if(keepScreenOn)void requestWakeLock();else void releaseWakeLock();};
   $('wpm').oninput=e=>{wpm=Number(e.target.value);$('wpmValue').textContent=wpm+' WPM';try{localStorage.setItem('glide_wpm',String(wpm));}catch(e){}render();};
   $('addText').onclick=async()=>{const title=$('title').value;const text=$('pasteText').value;await addDocument(title,text);if(clean(text)){$('pasteText').value='';$('title').value='';}};
   $('fileInput').onchange=e=>importFile(e.target.files[0]);
+  $('coverFileInput').onchange=e=>assignCoverFile(e.target.files[0]);
   document.addEventListener('keydown',e=>{if(e.key==='Escape' && document.body.classList.contains('focus-mode')){e.preventDefault();setFocusMode(false);return;}const tag=e.target?.tagName;if(['INPUT','TEXTAREA','BUTTON'].includes(tag)||e.target?.isContentEditable)return;if(e.code==='Space'){e.preventDefault();togglePlayback();}else if(e.code==='ArrowLeft'){e.preventDefault();seek(-10);}else if(e.code==='ArrowRight'){e.preventDefault();seek(10);}});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&(playing||narrating)){cancelModes();saveProgress();}});
   window.addEventListener('pagehide',()=>{if(doc&&doc.id!=='welcome'){doc.progress=index;txPut(doc);}});
