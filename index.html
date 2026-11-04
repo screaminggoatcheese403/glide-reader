@@ -7,8 +7,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Glide Reader">
-  <title>Glide Reader — One word. All focus. (v1.5.1)</title>
-  <meta name="description" content="One word. All focus. A private reader with adjustable focal letter, no subscription ever.">
+  <title>Glide Reader — One word. All focus. (v1.6)</title>
+  <meta name="description" content="One word. All focus. A free reader with three reading modes, scrolling text and adjustable focus.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-180.png">
   <style>
@@ -35,7 +35,7 @@
     .stage { position:relative; width:100%; min-height:290px; display:flex; flex-direction:column;align-items:center;justify-content:center;overflow:hidden; user-select:none; -webkit-user-select:none;cursor:pointer; }
     .stage:before,.stage:after { content:"";display:block;width:1px;height:13px;background:#58677d;position:absolute;left:50%;transform:translateX(-50%); }
     .stage:before { top:55px; } .stage:after { bottom:55px; }
-    .wordline { display:flex;align-items:baseline;width:100%;justify-content:center;white-space:nowrap;font-family:Georgia, 'Times New Roman', serif;font-weight:650;font-size:clamp(35px,7.8vw,67px);letter-spacing:-1px;line-height:1.5; }
+    .wordline { display:flex;align-items:baseline;width:100%;justify-content:center;white-space:nowrap;font-family:var(--reader-font, Georgia, serif);font-weight:650;font-size:var(--reader-font-size,40px);letter-spacing:-.4px;line-height:1.5; }
     .left-word { width:calc(50% - .36em); text-align:right; }
     /* The central pivot maintains a constant X position, even when its letter
        varies with word length or the user's recognition-point adjustment. */
@@ -143,7 +143,7 @@
     body.focus-mode .reader-head .docname {max-width:50vw;}
     body.focus-mode #wordCount {display:none;}
     body.focus-mode .stage {flex:1 1 auto;min-height:110px;}
-    body.focus-mode .wordline {font-size:clamp(42px,9vw,90px);}
+    body.focus-mode .wordline {font-size:var(--reader-font-size,40px);}
     body.focus-mode .stage:before {top:23%;}
     body.focus-mode .stage:after {bottom:23%;}
     body.focus-mode .stage-help {bottom:11%;}
@@ -176,6 +176,32 @@
       body.focus-mode .meta {margin:6px 0 9px;}
       body.focus-mode .speed {margin-top:8px;padding-top:9px;}
     }
+
+    /* Reading modes and typography. All modes use the same stored word index. */
+    .mode-bar {display:flex;align-items:center;flex-wrap:wrap;gap:10px 14px;margin-top:18px;padding:12px 0 0;border-top:1px solid var(--line);}
+    .mode-control {display:flex;align-items:center;gap:7px;min-width:0;}
+    .mode-control label {font-size:12px;color:#c0cee1;white-space:nowrap;}
+    .mode-control select,.type-select {min-width:0;max-width:180px;background:#202c3e;color:#f0f5fa;border:1px solid #41536b;border-radius:10px;padding:9px 7px;font-size:13px;}
+    .mode-control[hidden],.setting-block[hidden],.stage .wordline[hidden],.stage .line-viewport[hidden] {display:none !important;}
+    .stage.is-scrolling:before,.stage.is-scrolling:after {display:none;}
+    .stage.is-scrolling {min-height:var(--reading-stage-min,290px);}
+    .line-viewport {position:relative;overflow:hidden;width:calc(100% - 16px);height:calc(var(--reading-line-height,36px) * var(--reading-line-count,1));flex:none;user-select:none;-webkit-user-select:none;}
+    .line-flow {position:relative;will-change:transform;transform:translate3d(0,0,0);}
+    .reading-line {white-space:nowrap;overflow:hidden;text-overflow:clip;display:block;height:var(--reading-line-height,36px);line-height:var(--reading-line-height,36px);font-family:var(--reader-font, Georgia,serif);font-size:var(--reader-font-size,24px);font-weight:400;text-align:left;}
+    .reading-token {display:inline;color:var(--text);}
+    .reading-token.current-word {color:var(--focus-color);background:rgba(255,255,255,.1);border-radius:3px;}
+    .stage.no-highlight .reading-token.current-word {color:var(--text);background:none;}
+    .font-control {display:grid;gap:8px;}
+    .font-control label {font-size:13px;color:#dce7f5;}
+    .font-line {display:flex;align-items:center;gap:12px;}
+    .font-line select {flex:1;max-width:none;}
+    .font-size-row {display:flex;align-items:center;gap:10px;}
+    .font-size-value {min-width:44px;color:#a6c2ee;font-size:12px;text-align:right;font-variant-numeric:tabular-nums;}
+    body.focus-mode .mode-bar {flex:none;margin-top:10px;padding-top:8px;gap:6px 9px;}
+    body.focus-mode .mode-control select {font-size:12px;padding:7px 5px;max-width:135px;}
+    body.focus-mode .stage.is-scrolling {flex:1 0 auto;min-height:var(--reading-stage-min,180px);}
+    body.focus-mode .reader {overflow-y:auto;}
+    @media(max-width:430px){.mode-bar{gap:7px 10px}.mode-control{gap:4px}.mode-control select{padding:7px 5px;max-width:142px}.mode-control label{font-size:11px;}.stage.is-scrolling .stage-help{bottom:9px;}}
 
     @media (max-width:690px) { .lower {grid-template-columns:1fr;} .reader{padding:18px 16px 21px;} .stage{min-height:248px;} .stage:before{top:44px;} .stage:after{bottom:44px;} .stage-help{bottom:18px;} .local{font-size:10px;padding:7px;} .pad{padding:21px;} }
     @media (prefers-reduced-motion: reduce) { * {transition:none !important;} }
@@ -212,8 +238,24 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         <button type="button" class="smallbtn focus-btn" id="focusBtn" aria-pressed="false" aria-label="Expand Now Reading to focus mode">⛶ Focus</button>
       </div>
     </div>
+    <div class="mode-bar" role="group" aria-label="Reading view controls">
+      <div class="mode-control"><label for="readingMode">View</label>
+        <select id="readingMode" aria-label="Reading mode">
+          <option value="word">One word</option>
+          <option value="line">One line</option>
+          <option value="multi">4–6 lines</option>
+        </select>
+      </div>
+      <div class="mode-control" id="scrollStyleControl" hidden><label for="scrollStyle">Scroll</label>
+        <select id="scrollStyle"><option value="smooth">Smooth</option><option value="step">Line by line</option></select>
+      </div>
+      <div class="mode-control" id="lineCountControl" hidden><label for="lineCount">Lines</label>
+        <select id="lineCount"><option value="4">4</option><option value="5">5</option><option value="6">6</option></select>
+      </div>
+    </div>
     <div class="stage" id="stage" role="button" tabindex="0" aria-label="Tap to start or pause reading">
-      <div class="wordline" aria-live="off"><span class="left-word" id="wordLeft"></span><span class="pivot" id="wordPivot">R</span><span class="right-word" id="wordRight">eady</span></div>
+      <div class="wordline" id="wordline" aria-live="off"><span class="left-word" id="wordLeft"></span><span class="pivot" id="wordPivot">R</span><span class="right-word" id="wordRight">eady</span></div>
+      <div class="line-viewport" id="lineViewport" aria-live="off" hidden><div class="line-flow" id="lineFlow"></div></div>
       <div class="stage-help">Tap to play or pause</div>
     </div>
     <div class="track"><div class="fill" id="progressFill"></div></div>
@@ -231,10 +273,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     </div>
     <div class="speed"><label for="wpm">Reading speed</label><input type="range" id="wpm" min="100" max="1000" step="25" value="300"><span class="speedvalue" id="wpmValue">300 WPM</span></div>
     <details class="reading-settings" id="readingSettings">
-      <summary>Focal letter &amp; recognition point</summary>
+      <summary>Font, size &amp; reading highlight</summary>
       <div class="settings-content">
+        <div class="font-control">
+          <label for="readingFont">Reading font</label>
+          <div class="font-line"><select class="type-select" id="readingFont">
+            <option value="sans">Sans-serif</option><option value="serif">Serif</option><option value="mono">Monospaced</option>
+          </select></div>
+          <div class="font-size-row"><label for="fontSize">Font size</label><input type="range" id="fontSize" min="14" max="40" step="1" value="24"><output id="fontSizeValue" for="fontSize" class="font-size-value">24 px</output></div>
+        </div>
         <div class="settings-line">
-          <label for="highlightEnabled">Highlight focal letter</label>
+          <label for="highlightEnabled" id="highlightEnabledLabel">Highlight focal letter</label>
           <input type="checkbox" id="highlightEnabled" checked>
         </div>
         <div class="color-settings" id="colorSettings">
@@ -248,7 +297,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
             <label class="custom-color" for="customColor">Custom <input type="color" id="customColor" value="#fe5973" aria-label="Custom highlight colour"></label>
           </div>
         </div>
-        <div class="recognition-control">
+        <div class="recognition-control setting-block" id="recognitionControl">
           <div class="recognition-head"><label class="setting-label" for="recognitionOffset">Recognition point</label><output for="recognitionOffset" class="recognition-value" id="recognitionValue">Standard</output></div>
           <input type="range" id="recognitionOffset" min="-2" max="2" step="1" value="0" aria-label="Move focal letter earlier or later in each word">
           <div class="recognition-guide"><span>← Earlier</span><span>Standard</span><span>Later →</span></div>
@@ -279,7 +328,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <p>Play/Pause: Space on your computer. Back/forward: ← / →. Tap the reader on your phone.</p>
     </section>
   </div>
-  <div class="footer">Glide Reader v1.5.1 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
+  <div class="footer">Glide Reader v1.6 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
 </div>
 <script>
 (() => {
@@ -306,6 +355,170 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     recognitionOffset=Number.isInteger(savedOffset)?Math.max(-2,Math.min(2,savedOffset)):0;
   }catch(e){}
   function saveFocusPreference(key,value){try{localStorage.setItem(key,String(value));}catch(e){}}
+  // v1.6 preferences live in new keys; IndexedDB v1 and doc.progress stay unchanged.
+  const allowedModes=new Set(['word','line','multi']);
+  const fontFamilies={sans:'-apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif',serif:'Georgia, "Times New Roman", serif',mono:'Menlo, Consolas, "Liberation Mono", monospace'};
+  const readPreference=(key,fallback)=>{try{return localStorage.getItem(key)||fallback;}catch(e){return fallback;}};
+  let readingMode=readPreference('glide_reading_mode','word');
+  if(!allowedModes.has(readingMode))readingMode='word';
+  let scrollStyle=readPreference('glide_scroll_style','smooth');
+  if(!['smooth','step'].includes(scrollStyle))scrollStyle='smooth';
+  let multiLines=Number(readPreference('glide_multi_lines','5'));
+  if(![4,5,6].includes(multiLines))multiLines=5;
+  let readingFont=readPreference('glide_reading_font','serif');
+  if(!fontFamilies[readingFont])readingFont='serif';
+  const clampFontSize=v=>Math.max(14,Math.min(40,Number.isFinite(Number(v))?Math.round(Number(v)):24));
+  let wordFontSize=clampFontSize(readPreference('glide_font_size_word','40'));
+  let linesFontSize=clampFontSize(readPreference('glide_font_size_lines','24'));
+  const activeFontSize=()=>readingMode==='word'?wordFontSize:linesFontSize;
+  let lineLayout=null, lineLayoutKey='', drawnWindowKey='', currentLineIndex=-1;
+  let renderedWords=new Map(), scrollFrame=0, stepScrollTimer=0;
+  let lineHeight=36;
+  const measureCanvas=document.createElement('canvas');
+  const measureContext=measureCanvas.getContext('2d');
+  function clearLineMotion(){
+    if(scrollFrame)cancelAnimationFrame(scrollFrame);
+    if(stepScrollTimer)clearTimeout(stepScrollTimer);
+    scrollFrame=0;stepScrollTimer=0;
+    const flow=$('lineFlow');flow.style.transition='none';flow.style.transform='translate3d(0,0,0)';
+  }
+  function applyReadingPreferences(){
+    $('readingMode').value=readingMode;
+    $('scrollStyle').value=scrollStyle;
+    $('lineCount').value=String(multiLines);
+    $('scrollStyleControl').hidden=readingMode==='word';
+    $('lineCountControl').hidden=readingMode!=='multi';
+    $('readingFont').value=readingFont;
+    $('fontSize').value=String(activeFontSize());
+    $('fontSizeValue').textContent=activeFontSize()+' px';
+    $('stage').classList.toggle('is-scrolling',readingMode!=='word');
+    $('wordline').hidden=readingMode!=='word';
+    $('lineViewport').hidden=readingMode==='word';
+    $('highlightEnabledLabel').textContent=readingMode==='word'?'Highlight focal letter':'Highlight current word';
+    $('recognitionControl').hidden=readingMode!=='word';
+    document.documentElement.style.setProperty('--reader-font',fontFamilies[readingFont]);
+    document.documentElement.style.setProperty('--reader-font-size',activeFontSize()+'px');
+    const count=readingMode==='multi'?multiLines:1;
+    lineHeight=Math.round(activeFontSize()*1.52*10)/10;
+    document.documentElement.style.setProperty('--reading-line-count',count);
+    document.documentElement.style.setProperty('--reading-line-height',lineHeight+'px');
+    document.documentElement.style.setProperty('--reading-stage-min',Math.ceil(count*lineHeight+66)+'px');
+    lineLayoutKey='';drawnWindowKey='';clearLineMotion();
+  }
+  function ensureLineLayout(){
+    if(readingMode==='word'||!words.length)return;
+    // Measure once per document, available width and font. A word-width cache
+    // makes complete book reflow quick even for long imported texts.
+    const width=Math.max(100,Math.floor($('lineViewport').clientWidth)-8);
+    const key=[doc?.id||'welcome',words.length,width,readingFont,activeFontSize()].join('|');
+    if(lineLayoutKey===key&&lineLayout)return;
+    const font=`${activeFontSize()}px ${fontFamilies[readingFont]}`;
+    if(!measureContext)return;
+    measureContext.font=font;
+    const space=measureContext.measureText(' ').width;
+    const widths=new Map();
+    const lines=[];
+    let start=0,currentWidth=0;
+    for(let i=0;i<words.length;i++){
+      const word=words[i];
+      let wordWidth=widths.get(word);
+      if(wordWidth===undefined){wordWidth=measureContext.measureText(word).width;widths.set(word,wordWidth);}
+      const nextWidth=currentWidth+(i===start?0:space)+wordWidth;
+      if(i>start && nextWidth>width){lines.push({start,end:i});start=i;currentWidth=wordWidth;}
+      else currentWidth=nextWidth;
+    }
+    if(start<words.length)lines.push({start,end:words.length});
+    lineLayout=lines;
+    lineLayoutKey=key;drawnWindowKey='';
+  }
+  function lineAtWord(wordIndex){
+    if(!lineLayout?.length)return 0;
+    let lo=0,hi=lineLayout.length-1;
+    while(lo<hi){const mid=(lo+hi)>>1;if(wordIndex>=lineLayout[mid].end)lo=mid+1;else hi=mid;}
+    return lo;
+  }
+  function makeReadingLine(lineIndex){
+    const element=document.createElement('div');element.className='reading-line';
+    const entry=lineLayout[lineIndex];
+    if(!entry)return element;
+    for(let j=entry.start;j<entry.end;j++){
+      if(j!==entry.start)element.append(document.createTextNode(' '));
+      const span=document.createElement('span');span.className='reading-token';span.textContent=words[j];
+      span.dataset.wordIndex=String(j);element.append(span);renderedWords.set(j,span);
+    }
+    return element;
+  }
+  function renderLineView(){
+    if(readingMode==='word'||!words.length)return;
+    ensureLineLayout();if(!lineLayout?.length)return;
+    const active=lineAtWord(index);
+    const count=readingMode==='multi'?multiLines:1;
+    // Keep the current line at the top so the selected 4–6 lines are visible
+    // even at the beginning of a book, and each new line scrolls in seamlessly.
+    const slot=0;
+    const base=active-slot;
+    const key=[lineLayoutKey,base,count].join('|');
+    const flow=$('lineFlow');
+    if(drawnWindowKey!==key){
+      clearLineMotion();renderedWords=new Map();
+      const fragment=document.createDocumentFragment();
+      for(let i=0;i<count+1;i++)fragment.append(makeReadingLine(base+i));
+      flow.replaceChildren(fragment);
+      drawnWindowKey=key;
+    }
+    if(currentLineIndex!==active){currentLineIndex=active;}
+    for(const el of flow.querySelectorAll('.current-word'))el.classList.remove('current-word');
+    renderedWords.get(index)?.classList.add('current-word');
+    updateLineMotion(active);
+  }
+  function lineFraction(active,wordIndex,includeCurrent){
+    const line=lineLayout?.[active];if(!line)return 0;
+    let total=0,elapsed=0;
+    for(let i=line.start;i<line.end;i++){
+      const ms=wordDuration(words[i]);total+=ms;
+      if(i<wordIndex ||(includeCurrent&&i===wordIndex))elapsed+=ms;
+    }
+    return total?elapsed/total:0;
+  }
+  function updateLineMotion(active){
+    const flow=$('lineFlow');
+    if(!playing){
+      if(scrollFrame)cancelAnimationFrame(scrollFrame);
+      if(stepScrollTimer)clearTimeout(stepScrollTimer);
+      scrollFrame=0;stepScrollTimer=0;
+      flow.style.transition='none';
+      flow.style.transform='translate3d(0,0,0)';
+      return;
+    }
+    const delay=wordDuration(words[index]||'');
+    if(scrollStyle==='smooth'){
+      if(scrollFrame)cancelAnimationFrame(scrollFrame);
+      const start=lineFraction(active,index,false),end=lineFraction(active,index,true);
+      flow.style.transition='none';
+      flow.style.transform=`translate3d(0,${(-lineHeight*start).toFixed(2)}px,0)`;
+      // Force style commit so identical DOM rows can animate without resetting.
+      void flow.offsetHeight;
+      scrollFrame=requestAnimationFrame(()=>{
+        flow.style.transition=`transform ${Math.round(delay)}ms linear`;
+        flow.style.transform=`translate3d(0,${(-lineHeight*end).toFixed(2)}px,0)`;
+        scrollFrame=0;
+      });
+    }else{
+      // Step mode: hold each line still, then gently slide it away as the
+      // final word finishes. The next line is already mounted below it.
+      if(stepScrollTimer)clearTimeout(stepScrollTimer);
+      flow.style.transition='none';flow.style.transform='translate3d(0,0,0)';
+      const lastWord=lineLayout[active]?.end-1;
+      if(index===lastWord && active<lineLayout.length-1){
+        const duration=Math.min(260,Math.max(100,delay*.45));
+        stepScrollTimer=setTimeout(()=>{
+          flow.style.transition=`transform ${Math.round(duration)}ms ease-in-out`;
+          flow.style.transform=`translate3d(0,${-lineHeight}px,0)`;
+        },Math.max(0,delay-duration));
+      }
+    }
+  }
+
   function applyFocusSettings(){
     $('highlightEnabled').checked=highlightEnabled;
     $('colorSettings').classList.toggle('is-disabled',!highlightEnabled);
@@ -434,7 +647,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     b.textContent=chars[p];
     c.textContent=chars.slice(p+1).join('');
   }
-  function render(){const current=words[index]||'Done';displayWord(current);$('docName').textContent=doc?.title||'Welcome';$('wordCount').textContent=words.length.toLocaleString()+' words';const currentNum=Math.min(index+1,words.length);$('position').textContent=`${currentNum.toLocaleString()} of ${words.length.toLocaleString()} words`;$('progressFill').style.width=(100*currentNum/Math.max(1,words.length))+'%';const remain=Math.max(0,words.length-currentNum);const secs=Math.round(remain/wpm*60);$('timeLeft').textContent=secs>=60?`${Math.ceil(secs/60)} min remaining`:`${secs} sec remaining`;$('playBtn').textContent=playing?'❚❚ Pause':'▶ Play';$('voiceBtn').textContent=narrating?'■ Stop voice':'♫ Narrate';}
+  function render(){if(doc&&doc.id!=='welcome'){doc.progress=index;const cached=books.find(x=>x.id===doc.id);if(cached)cached.progress=index;}const current=words[index]||'Done';if(readingMode==='word')displayWord(current);else renderLineView();$('docName').textContent=doc?.title||'Welcome';$('wordCount').textContent=words.length.toLocaleString()+' words';const currentNum=Math.min(index+1,words.length);$('position').textContent=`${currentNum.toLocaleString()} of ${words.length.toLocaleString()} words`;$('progressFill').style.width=(100*currentNum/Math.max(1,words.length))+'%';const remain=Math.max(0,words.length-currentNum);const secs=Math.round(remain/wpm*60);$('timeLeft').textContent=secs>=60?`${Math.ceil(secs/60)} min remaining`:`${secs} sec remaining`;$('playBtn').textContent=playing?'❚❚ Pause':'▶ Play';$('voiceBtn').textContent=narrating?'■ Stop voice':'♫ Narrate';}
   function setAwakeMessage(msg){$('awakeState').textContent=msg;}
   async function releaseWakeLock(){
     const held=wakeLock; wakeLock=null;
@@ -468,6 +681,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     try{await wakeRequest;}finally{wakeRequest=null;}
   }
   function cancelModes(){
+    clearLineMotion();
     clearTimeout(timer);timer=null;
     clearTimeout(speechStartWatchdog);speechStartWatchdog=null;
     clearTimeout(speechNextTimer);speechNextTimer=null;
@@ -481,7 +695,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     render();
   }
   async function saveProgress(){if(doc&&doc.id!=='welcome'){doc.progress=index;doc.updated=Date.now();await txPut(doc);}}
-  function loadDoc(item){cancelModes();doc={...item};words=tokenize(doc.text);index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
+  function loadDoc(item){if(doc&&doc.id!=='welcome')void saveProgress();cancelModes();doc={...item};words=tokenize(doc.text);lineLayoutKey='';drawnWindowKey='';lineLayout=null;currentLineIndex=-1;index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);if(!document.body.classList.contains('focus-mode'))document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
   function wordDuration(word){let ms=60000/wpm; if(/[.!?][”’"')\]]*$/.test(word)) ms*=1.9;else if(/[,;:][”’"')\]]*$/.test(word)) ms*=1.4;if(word.length>12)ms*=1.25;return ms;}
   function tick(){if(!playing)return;const wait=wordDuration(words[index]||'');timer=setTimeout(()=>{if(!playing)return;if(index>=words.length-1){playing=false;render();saveProgress();status('Finished! You can restart with the back button.');return;}index++;render();if(index%9===0)saveProgress();tick();},wait);}
   function togglePlayback(){if(narrating)cancelModes();if(!words.length)return;if(playing){cancelModes();saveProgress();return;}if(index>=words.length-1)index=0;playing=true;render();void requestWakeLock();tick();}
@@ -877,6 +1091,46 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     applyFocusSettings();render();
   };
   applyFocusSettings();
+  applyReadingPreferences();
+  $('readingMode').onchange=e=>{
+    const mode=e.target.value;
+    if(!allowedModes.has(mode))return;
+    cancelModes();readingMode=mode;
+    saveFocusPreference('glide_reading_mode',readingMode);
+    applyReadingPreferences();render();saveProgress();
+  };
+  $('scrollStyle').onchange=e=>{
+    if(!['smooth','step'].includes(e.target.value))return;
+    cancelModes();scrollStyle=e.target.value;
+    saveFocusPreference('glide_scroll_style',scrollStyle);
+    applyReadingPreferences();render();
+  };
+  $('lineCount').onchange=e=>{
+    if(![4,5,6].includes(Number(e.target.value)))return;
+    cancelModes();multiLines=Number(e.target.value);
+    saveFocusPreference('glide_multi_lines',multiLines);
+    applyReadingPreferences();render();
+  };
+  $('readingFont').onchange=e=>{
+    if(!fontFamilies[e.target.value])return;
+    cancelModes();readingFont=e.target.value;
+    saveFocusPreference('glide_reading_font',readingFont);
+    applyReadingPreferences();render();
+  };
+  $('fontSize').oninput=e=>{
+    const size=clampFontSize(e.target.value);
+    if(readingMode==='word')wordFontSize=size;
+    else linesFontSize=size;
+    saveFocusPreference(readingMode==='word'?'glide_font_size_word':'glide_font_size_lines',size);
+    if(playing||narrating)cancelModes();
+    applyReadingPreferences();render();
+  };
+  let lastLineViewportWidth=0;
+  window.addEventListener('resize',()=>{
+    if(readingMode==='word')return;
+    const width=$('lineViewport').clientWidth;
+    if(width&&width!==lastLineViewportWidth){lastLineViewportWidth=width;lineLayoutKey='';drawnWindowKey='';render();}
+  });
   $('playBtn').onclick=togglePlayback;$('stage').onclick=togglePlayback;$('stage').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();togglePlayback();}};$('backBtn').onclick=()=>seek(-10);$('nextBtn').onclick=()=>seek(10);$('replayBtn').onclick=replaySentence;$('voiceBtn').onclick=narrate;
   $('keepAwake').onchange=e=>{keepScreenOn=e.target.checked;try{localStorage.setItem('glide_keep_screen_on',String(keepScreenOn));}catch(e){}if(keepScreenOn)void requestWakeLock();else void releaseWakeLock();};
   $('wpm').oninput=e=>{wpm=Number(e.target.value);$('wpmValue').textContent=wpm+' WPM';try{localStorage.setItem('glide_wpm',String(wpm));}catch(e){}render();};
