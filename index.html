@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Glide Reader">
-  <title>Glide Reader — One word. All focus. (v1.6)</title>
+  <title>Glide Reader — One word. All focus. (v1.6.2)</title>
   <meta name="description" content="One word. All focus. A free reader with three reading modes, scrolling text and adjustable focus.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-180.png">
@@ -286,6 +286,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
           <label for="highlightEnabled" id="highlightEnabledLabel">Highlight focal letter</label>
           <input type="checkbox" id="highlightEnabled" checked>
         </div>
+        <p class="settings-hint" id="highlightModeHint">Scrolling modes start without highlighting; choose whether to enable it for each view.</p>
         <div class="color-settings" id="colorSettings">
           <div class="setting-label" id="highlightColorLabel">Highlight colour</div>
           <div class="color-row" role="group" aria-labelledby="highlightColorLabel">
@@ -328,7 +329,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <p>Play/Pause: Space on your computer. Back/forward: ← / →. Tap the reader on your phone.</p>
     </section>
   </div>
-  <div class="footer">Glide Reader v1.6 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
+  <div class="footer">Glide Reader v1.6.2 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
 </div>
 <script>
 (() => {
@@ -361,6 +362,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   const readPreference=(key,fallback)=>{try{return localStorage.getItem(key)||fallback;}catch(e){return fallback;}};
   let readingMode=readPreference('glide_reading_mode','word');
   if(!allowedModes.has(readingMode))readingMode='word';
+  // Keep the existing focal-letter option for RSVP mode. Scrolling reading
+  // defaults to plain text and each mode remembers its own optional highlight.
+  let lineHighlightEnabled=readPreference('glide_highlight_enabled_line','false')==='true';
+  let multiHighlightEnabled=readPreference('glide_highlight_enabled_multi','false')==='true';
+  const activeHighlightEnabled=()=>readingMode==='word'?highlightEnabled:
+    readingMode==='line'?lineHighlightEnabled:multiHighlightEnabled;
   let scrollStyle=readPreference('glide_scroll_style','smooth');
   if(!['smooth','step'].includes(scrollStyle))scrollStyle='smooth';
   let multiLines=Number(readPreference('glide_multi_lines','5'));
@@ -395,6 +402,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('wordline').hidden=readingMode!=='word';
     $('lineViewport').hidden=readingMode==='word';
     $('highlightEnabledLabel').textContent=readingMode==='word'?'Highlight focal letter':'Highlight current word';
+    $('highlightModeHint').textContent=readingMode==='word'?
+      'Focal-letter highlighting keeps your existing setting.':
+      'Off by default in scrolling views. You can turn this on for this mode.';
     $('recognitionControl').hidden=readingMode!=='word';
     document.documentElement.style.setProperty('--reader-font',fontFamilies[readingFont]);
     document.documentElement.style.setProperty('--reader-font-size',activeFontSize()+'px');
@@ -453,9 +463,11 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     ensureLineLayout();if(!lineLayout?.length)return;
     const active=lineAtWord(index);
     const count=readingMode==='multi'?multiLines:1;
-    // Keep the current line at the top so the selected 4–6 lines are visible
-    // even at the beginning of a book, and each new line scrolls in seamlessly.
-    const slot=0;
+    // Keep the active word two rows down in multi-line mode, with two
+    // preceding text lines above it and the remaining lines below it.
+    // At the start of a book, missing preceding lines are blank placeholders.
+    // The single-line mode remains anchored at the top of its one-row window.
+    const slot=readingMode==='multi'?2:0;
     const base=active-slot;
     const key=[lineLayoutKey,base,count].join('|');
     const flow=$('lineFlow');
@@ -520,15 +532,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
 
   function applyFocusSettings(){
-    $('highlightEnabled').checked=highlightEnabled;
-    $('colorSettings').classList.toggle('is-disabled',!highlightEnabled);
+    const enabled=activeHighlightEnabled();
+    $('highlightEnabled').checked=enabled;
+    $('colorSettings').classList.toggle('is-disabled',!enabled);
     $('colorSettings').querySelectorAll('button').forEach(btn=>{
       btn.setAttribute('aria-pressed',String(btn.dataset.color===highlightColor));
-      btn.disabled=!highlightEnabled;
+      btn.disabled=!enabled;
     });
-    $('customColor').disabled=!highlightEnabled;
+    $('customColor').disabled=!enabled;
     $('customColor').value=highlightColor;
-    $('stage').classList.toggle('no-highlight',!highlightEnabled);
+    $('stage').classList.toggle('no-highlight',!enabled);
     document.documentElement.style.setProperty('--focus-color',highlightColor);
     $('recognitionOffset').value=String(recognitionOffset);
     const label=recognitionOffset===0?'Standard':`${Math.abs(recognitionOffset)} letter${Math.abs(recognitionOffset)===1?'':'s'} ${recognitionOffset<0?'earlier':'later'}`;
@@ -1068,8 +1081,17 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     document.body.classList.toggle('focus-settings-open',$('readingSettings').open);
   });
   $('highlightEnabled').onchange=e=>{
-    highlightEnabled=e.target.checked;
-    saveFocusPreference('glide_highlight_enabled',highlightEnabled);
+    const enabled=e.target.checked;
+    if(readingMode==='word'){
+      highlightEnabled=enabled;
+      saveFocusPreference('glide_highlight_enabled',enabled);
+    }else if(readingMode==='line'){
+      lineHighlightEnabled=enabled;
+      saveFocusPreference('glide_highlight_enabled_line',enabled);
+    }else{
+      multiHighlightEnabled=enabled;
+      saveFocusPreference('glide_highlight_enabled_multi',enabled);
+    }
     applyFocusSettings();render();
   };
   $('colorSettings').querySelectorAll('.color-swatch').forEach(btn=>{
@@ -1097,7 +1119,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(!allowedModes.has(mode))return;
     cancelModes();readingMode=mode;
     saveFocusPreference('glide_reading_mode',readingMode);
-    applyReadingPreferences();render();saveProgress();
+    applyReadingPreferences();applyFocusSettings();render();saveProgress();
   };
   $('scrollStyle').onchange=e=>{
     if(!['smooth','step'].includes(e.target.value))return;
