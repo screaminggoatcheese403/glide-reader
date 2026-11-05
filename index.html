@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Glide Reader">
-  <title>Glide Reader — One word. All focus. (v1.7.0)</title>
+  <title>Glide Reader — One word. All focus. (v1.7.1)</title>
   <meta name="description" content="One word. All focus. A free reader with three reading modes, scrolling text and adjustable focus.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-180.png">
@@ -347,7 +347,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <p>Play/Pause: Space on your computer. Back/forward: ← / →. Tap the reader on your phone.</p>
     </section>
   </div>
-  <div class="footer">Glide Reader v1.7.0 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
+  <div class="footer">Glide Reader v1.7.1 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
 </div>
 <script>
 (() => {
@@ -427,6 +427,16 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   let structureBreaks=new Map();
   let renderedWords=new Map(), scrollFrame=0, stepScrollTimer=0;
   let lineHeight=36;
+  // Smooth mode runs one persistent requestAnimationFrame loop. The word timer
+  // advances the book position; frames interpolate its *visual* position.
+  // Separating the two prevents the old start/stop CSS transition at every word.
+  let smoothWordStarted=0, smoothWordDelay=0;
+  let smoothPausedWord=-1, smoothPausedFraction=0;
+  function resetSmoothPause(){smoothPausedWord=-1;smoothPausedFraction=0;}
+  function smoothFraction(now=performance.now()){
+    if(!smoothWordDelay)return 0;
+    return Math.max(0,Math.min(1,(now-smoothWordStarted)/smoothWordDelay));
+  }
   const measureCanvas=document.createElement('canvas');
   const measureContext=measureCanvas.getContext('2d');
   function clearLineMotion(){
@@ -523,81 +533,112 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     return element;
   }
+  // The line window is virtualized: at most count+4 rows exist in the DOM.
+  // A change of base row replaces those rows and adjusts the transform in the
+  // *same frame*. This produces an unbroken upward stream even at chapter gaps.
+  function drawLineWindow(base,count,offset){
+    const flow=$('lineFlow');
+    const key=[lineLayoutKey,base,count].join('|');
+    if(drawnWindowKey!==key){
+      if(scrollStyle!=='smooth')clearLineMotion();
+      renderedWords=new Map();
+      const fragment=document.createDocumentFragment();
+      for(let i=0;i<count+4;i++)fragment.append(makeReadingLine(base+i));
+      flow.replaceChildren(fragment);
+      drawnWindowKey=key;
+      renderedWords.get(index)?.classList.add('current-word');
+    }
+    flow.style.transition='none';
+    flow.style.transform=`translate3d(0,${(-offset*lineHeight).toFixed(3)}px,0)`;
+  }
+  function lineFraction(active,wordIndex){
+    const line=lineLayout?.[active];if(!line||line.kind)return 0;
+    let total=0,elapsed=0;
+    for(let i=line.start;i<line.end;i++){
+      const ms=readingDelay(i);
+      total+=ms;
+      if(i<wordIndex)elapsed+=ms;
+    }
+    return total?elapsed/total:0;
+  }
+  // Word positions are absolute virtual line coordinates (including paragraph
+  // spacer rows). Position for word i+1 is exactly the end position of word i,
+  // so there is never a visual jump when the reading index advances.
+  function smoothWordPosition(at){
+    if(!lineLayout?.length)return 0;
+    const lineIndex=lineAtWord(at);
+    return lineIndex+lineFraction(lineIndex,at);
+  }
+  function drawSmoothFrame(now=performance.now()){
+    const a=smoothWordPosition(index);
+    const b=index<words.length-1?smoothWordPosition(index+1):a;
+    const ratio=playing?smoothFraction(now):smoothPausedWord===index?smoothPausedFraction:0;
+    const position=a+(b-a)*ratio;
+    const current=Math.floor(position);
+    const count=readingMode==='multi'?multiLines:1;
+    const anchor=readingMode==='multi'?2:0;
+    drawLineWindow(current-anchor,count,Math.max(0,position-current));
+  }
+  function runSmoothFrames(now){
+    scrollFrame=0;
+    if(!playing||readingMode==='word'||scrollStyle!=='smooth')return;
+    drawSmoothFrame(now);
+    scrollFrame=requestAnimationFrame(runSmoothFrames);
+  }
+  function ensureSmoothFrames(){
+    if(!scrollFrame&&playing&&readingMode!=='word'&&scrollStyle==='smooth')
+      scrollFrame=requestAnimationFrame(runSmoothFrames);
+  }
   function renderLineView(){
     if(readingMode==='word'||!words.length)return;
     ensureLineLayout();if(!lineLayout?.length)return;
     const active=lineAtWord(index);
+    if(currentLineIndex!==active)currentLineIndex=active;
+    if(scrollStyle==='smooth'){
+      drawSmoothFrame();
+      ensureSmoothFrames();
+      // Drawing new virtual rows may replace the highlighted token node.
+      for(const el of $('lineFlow').querySelectorAll('.current-word'))
+        if(Number(el.dataset.wordIndex)!==index)el.classList.remove('current-word');
+      renderedWords.get(index)?.classList.add('current-word');
+      return;
+    }
     const count=readingMode==='multi'?multiLines:1;
-    // Keep the active word two rows down in multi-line mode, with two
-    // preceding text lines above it and the remaining lines below it.
-    // At the start of a book, missing preceding lines are blank placeholders.
-    // The single-line mode remains anchored at the top of its one-row window.
-    const slot=readingMode==='multi'?2:0;
-    const base=active-slot;
+    const anchor=readingMode==='multi'?2:0;
+    const base=active-anchor;
     const key=[lineLayoutKey,base,count].join('|');
     const flow=$('lineFlow');
     if(drawnWindowKey!==key){
       clearLineMotion();renderedWords=new Map();
       const fragment=document.createDocumentFragment();
-      // Chapter breaks can span three virtual rows; mount enough extra rows
-      // that smooth and stepped scrolling do not reveal an empty viewport.
       for(let i=0;i<count+4;i++)fragment.append(makeReadingLine(base+i));
-      flow.replaceChildren(fragment);
-      drawnWindowKey=key;
+      flow.replaceChildren(fragment);drawnWindowKey=key;
     }
-    if(currentLineIndex!==active){currentLineIndex=active;}
     for(const el of flow.querySelectorAll('.current-word'))el.classList.remove('current-word');
     renderedWords.get(index)?.classList.add('current-word');
-    updateLineMotion(active);
+    // Deliberate hold-and-slide in Line by line; this option is not affected.
+    updateSteppedLineMotion(active);
   }
-  function lineFraction(active,wordIndex,includeCurrent){
-    const line=lineLayout?.[active];if(!line)return 0;
-    let total=0,elapsed=0;
-    for(let i=line.start;i<line.end;i++){
-      const ms=wordDuration(words[i]);total+=ms;
-      if(i<wordIndex ||(includeCurrent&&i===wordIndex))elapsed+=ms;
-    }
-    return total?elapsed/total:0;
-  }
-  function updateLineMotion(active){
+  function updateSteppedLineMotion(active){
     const flow=$('lineFlow');
     if(!playing){
-      if(scrollFrame)cancelAnimationFrame(scrollFrame);
       if(stepScrollTimer)clearTimeout(stepScrollTimer);
-      scrollFrame=0;stepScrollTimer=0;
-      flow.style.transition='none';
-      flow.style.transform='translate3d(0,0,0)';
+      stepScrollTimer=0;
+      flow.style.transition='none';flow.style.transform='translate3d(0,0,0)';
       return;
     }
+    if(stepScrollTimer)clearTimeout(stepScrollTimer);
+    flow.style.transition='none';flow.style.transform='translate3d(0,0,0)';
     const delay=readingDelay(index);
     const nextActive=index<words.length-1?lineAtWord(index+1):active;
-    if(scrollStyle==='smooth'){
-      if(scrollFrame)cancelAnimationFrame(scrollFrame);
-      const start=lineFraction(active,index,false);
-      const end=nextActive>active ? nextActive-active : lineFraction(active,index,true);
-      flow.style.transition='none';
-      flow.style.transform=`translate3d(0,${(-lineHeight*start).toFixed(2)}px,0)`;
-      // Force style commit so identical DOM rows can animate without resetting.
-      void flow.offsetHeight;
-      scrollFrame=requestAnimationFrame(()=>{
-        flow.style.transition=`transform ${Math.round(delay)}ms linear`;
-        flow.style.transform=`translate3d(0,${(-lineHeight*end).toFixed(2)}px,0)`;
-        scrollFrame=0;
-      });
-    }else{
-      // Step mode: hold each line still, then gently slide it away as the
-      // final word finishes. The next line is already mounted below it.
-      if(stepScrollTimer)clearTimeout(stepScrollTimer);
-      flow.style.transition='none';flow.style.transform='translate3d(0,0,0)';
-      const lastWord=lineLayout[active]?.end-1;
-      if(index===lastWord && nextActive>active){
-        const distance=nextActive-active;
-        const duration=Math.min(520,Math.max(160,delay*.55));
-        stepScrollTimer=setTimeout(()=>{
-          flow.style.transition=`transform ${Math.round(duration)}ms ease-in-out`;
-          flow.style.transform=`translate3d(0,${-lineHeight*distance}px,0)`;
-        },Math.max(0,delay-duration));
-      }
+    const lastWord=lineLayout[active]?.end-1;
+    if(index===lastWord && nextActive>active){
+      const distance=nextActive-active;
+      const duration=Math.min(520,Math.max(160,delay*.55));
+      stepScrollTimer=setTimeout(()=>{
+        flow.style.transition=`transform ${Math.round(duration)}ms ease-in-out`;
+        flow.style.transform=`translate3d(0,${-lineHeight*distance}px,0)`;
+      },Math.max(0,delay-duration));
     }
   }
 
@@ -772,6 +813,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     try{await wakeRequest;}finally{wakeRequest=null;}
   }
   function cancelModes(){
+    // Save the partial line movement when the user pauses, so Play resumes
+    // from exactly that visual position rather than snapping backwards.
+    if(playing&&readingMode!=='word'&&scrollStyle==='smooth'){
+      smoothPausedWord=index;
+      smoothPausedFraction=smoothFraction();
+    }
     clearLineMotion();
     clearTimeout(timer);timer=null;
     clearTimeout(speechStartWatchdog);speechStartWatchdog=null;
@@ -786,7 +833,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     render();
   }
   async function saveProgress(){if(doc&&doc.id!=='welcome'){doc.progress=index;doc.updated=Date.now();await txPut(doc);}}
-  function loadDoc(item){if(doc&&doc.id!=='welcome')void saveProgress();cancelModes();doc={...item};words=tokenize(doc.text);structureBreaks=textBoundaries(doc.text,normalizeFileType(doc));lineLayoutKey='';drawnWindowKey='';lineLayout=null;currentLineIndex=-1;index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);if(!document.body.classList.contains('focus-mode'))document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
+  function loadDoc(item){if(doc&&doc.id!=='welcome')void saveProgress();cancelModes();resetSmoothPause();doc={...item};words=tokenize(doc.text);structureBreaks=textBoundaries(doc.text,normalizeFileType(doc));lineLayoutKey='';drawnWindowKey='';lineLayout=null;currentLineIndex=-1;index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);if(!document.body.classList.contains('focus-mode'))document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
   function wordDuration(word){let ms=60000/wpm; if(/[.!?][”’"')\]]*$/.test(word)) ms*=1.9;else if(/[,;:][”’"')\]]*$/.test(word)) ms*=1.4;if(word.length>12)ms*=1.25;return ms;}
   // A small pause gives the eye time to register a new paragraph or chapter.
   // The word index never changes due to formatting-only rows.
@@ -799,9 +846,25 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     return duration;
   }
-  function tick(){if(!playing)return;const wait=readingDelay(index);timer=setTimeout(()=>{if(!playing)return;if(index>=words.length-1){playing=false;render();saveProgress();status('Finished! You can restart with the back button.');return;}index++;render();if(index%9===0)saveProgress();tick();},wait);}
-  function togglePlayback(){if(narrating)cancelModes();if(!words.length)return;if(playing){cancelModes();saveProgress();return;}if(index>=words.length-1)index=0;playing=true;render();void requestWakeLock();tick();}
-  function seek(n){cancelModes();index=Math.max(0,Math.min(words.length-1,index+n));render();saveProgress();}
+  function tick(){
+    if(!playing)return;
+    const delay=readingDelay(index);
+    const resumeFraction=smoothPausedWord===index?smoothPausedFraction:0;
+    resetSmoothPause();
+    smoothWordDelay=delay;
+    smoothWordStarted=performance.now()-resumeFraction*delay;
+    const wait=delay*(1-resumeFraction);
+    timer=setTimeout(()=>{
+      if(!playing)return;
+      if(index>=words.length-1){playing=false;resetSmoothPause();render();saveProgress();status('Finished! You can restart with the back button.');return;}
+      index++;
+      tick(); // establish next word's timeline before painting
+      render();
+      if(index%9===0)saveProgress();
+    },wait);
+  }
+  function togglePlayback(){if(narrating)cancelModes();if(!words.length)return;if(playing){cancelModes();saveProgress();return;}if(index>=words.length-1){index=0;resetSmoothPause();}playing=true;tick();render();void requestWakeLock();}
+  function seek(n){cancelModes();resetSmoothPause();index=Math.max(0,Math.min(words.length-1,index+n));render();saveProgress();}
   function sentenceStart(i){
     // Sentence boundaries are detected in the imported, whitespace-tokenized
     // text and include common trailing closing quotes and parentheses.
@@ -815,8 +878,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const wasPlaying=playing,wasNarrating=narrating;
     let at=sentenceStart(index);
     if(at===index && at>0)at=sentenceStart(at-1);
-    cancelModes();index=at;render();saveProgress();
-    if(wasPlaying){playing=true;render();void requestWakeLock();tick();}
+    cancelModes();resetSmoothPause();index=at;render();saveProgress();
+    if(wasPlaying){playing=true;tick();render();void requestWakeLock();}
     else if(wasNarrating)narrate();
   }
   // iPhone Safari frequently fails to speak book-length utterances. Read short
@@ -1284,31 +1347,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $('readingMode').onchange=e=>{
     const mode=e.target.value;
     if(!allowedModes.has(mode))return;
-    cancelModes();readingMode=mode;
+    cancelModes();resetSmoothPause();readingMode=mode;
     saveFocusPreference('glide_reading_mode',readingMode);
     applyReadingPreferences();applyFocusSettings();render();saveProgress();
   };
   $('scrollStyle').onchange=e=>{
     if(!['smooth','step'].includes(e.target.value))return;
-    cancelModes();scrollStyle=e.target.value;
+    cancelModes();resetSmoothPause();scrollStyle=e.target.value;
     saveFocusPreference('glide_scroll_style',scrollStyle);
     applyReadingPreferences();render();
   };
   $('lineCount').onchange=e=>{
     if(![4,5,6].includes(Number(e.target.value)))return;
-    cancelModes();multiLines=Number(e.target.value);
+    cancelModes();resetSmoothPause();multiLines=Number(e.target.value);
     saveFocusPreference('glide_multi_lines',multiLines);
     applyReadingPreferences();render();
   };
   $('paragraphStyle').onchange=e=>{
     if(!['indent','space'].includes(e.target.value))return;
-    cancelModes();paragraphStyle=e.target.value;
+    cancelModes();resetSmoothPause();paragraphStyle=e.target.value;
     saveFocusPreference('glide_paragraph_style',paragraphStyle);
     applyReadingPreferences();render();
   };
   $('readingFont').onchange=e=>{
     if(!fontFamilies[e.target.value])return;
-    cancelModes();readingFont=e.target.value;
+    cancelModes();resetSmoothPause();readingFont=e.target.value;
     saveFocusPreference('glide_reading_font',readingFont);
     applyReadingPreferences();render();
   };
@@ -1318,7 +1381,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     else linesFontSize=size;
     saveFocusPreference(readingMode==='word'?'glide_font_size_word':'glide_font_size_lines',size);
     if(playing||narrating)cancelModes();
-    applyReadingPreferences();render();
+    resetSmoothPause();applyReadingPreferences();render();
   };
   let lastLineViewportWidth=0;
   window.addEventListener('resize',()=>{
@@ -1328,7 +1391,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   });
   $('playBtn').onclick=togglePlayback;$('stage').onclick=togglePlayback;$('stage').onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();togglePlayback();}};$('backBtn').onclick=()=>seek(-10);$('nextBtn').onclick=()=>seek(10);$('replayBtn').onclick=replaySentence;$('voiceBtn').onclick=narrate;
   $('keepAwake').onchange=e=>{keepScreenOn=e.target.checked;try{localStorage.setItem('glide_keep_screen_on',String(keepScreenOn));}catch(e){}if(keepScreenOn)void requestWakeLock();else void releaseWakeLock();};
-  $('wpm').oninput=e=>{wpm=Number(e.target.value);$('wpmValue').textContent=wpm+' WPM';try{localStorage.setItem('glide_wpm',String(wpm));}catch(e){}render();};
+  $('wpm').oninput=e=>{wpm=Number(e.target.value);$('wpmValue').textContent=wpm+' WPM';try{localStorage.setItem('glide_wpm',String(wpm));}catch(e){}if(playing){clearTimeout(timer);resetSmoothPause();tick();}render();};
   $('addText').onclick=async()=>{const title=$('title').value;const text=$('pasteText').value;await addDocument(title,text);if(clean(text)){$('pasteText').value='';$('title').value='';}};
   $('fileInput').onchange=e=>importFile(e.target.files[0]);
   $('coverFileInput').onchange=e=>assignCoverFile(e.target.files[0]);
