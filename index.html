@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Glide Reader">
-  <title>Glide Reader — One word. All focus. (v1.7.1)</title>
+  <title>Glide Reader — One word. All focus. (v1.7.2)</title>
   <meta name="description" content="One word. All focus. A free reader with three reading modes, scrolling text and adjustable focus.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-180.png">
@@ -186,7 +186,7 @@
     .stage.is-scrolling:before,.stage.is-scrolling:after {display:none;}
     .stage.is-scrolling {min-height:var(--reading-stage-min,290px);}
     .line-viewport {position:relative;overflow:hidden;width:calc(100% - 16px);height:calc(var(--reading-line-height,36px) * var(--reading-line-count,1));flex:none;user-select:none;-webkit-user-select:none;}
-    .line-flow {position:relative;will-change:transform;transform:translate3d(0,0,0);}
+    .line-flow {position:relative;will-change:transform;transform:translate3d(0,0,0);backface-visibility:hidden;-webkit-backface-visibility:hidden;}
     .reading-line {white-space:nowrap;overflow:hidden;text-overflow:clip;display:block;height:var(--reading-line-height,36px);line-height:var(--reading-line-height,36px);font-family:var(--reader-font, Georgia,serif);font-size:var(--reader-font-size,24px);font-weight:400;text-align:left;}
     .reading-token {display:inline;color:var(--text);}
     .reading-token.current-word {color:var(--focus-color);background:rgba(255,255,255,.1);border-radius:3px;}
@@ -347,7 +347,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <p>Play/Pause: Space on your computer. Back/forward: ← / →. Tap the reader on your phone.</p>
     </section>
   </div>
-  <div class="footer">Glide Reader v1.7.1 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
+  <div class="footer">Glide Reader v1.7.2 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
 </div>
 <script>
 (() => {
@@ -471,7 +471,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     document.documentElement.style.setProperty('--reading-line-count',count);
     document.documentElement.style.setProperty('--reading-line-height',lineHeight+'px');
     document.documentElement.style.setProperty('--reading-stage-min',Math.ceil(count*lineHeight+66)+'px');
-    lineLayoutKey='';drawnWindowKey='';clearLineMotion();
+    lineLayoutKey='';drawnWindowKey='';smoothBufferStart=NaN;smoothBufferEnd=NaN;clearLineMotion();
   }
   function ensureLineLayout(){
     if(readingMode==='word'||!words.length)return;
@@ -512,7 +512,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     finish(words.length);
     lineLayout=lines;
-    lineLayoutKey=key;drawnWindowKey='';
+    lineLayoutKey=key;drawnWindowKey='';smoothBufferStart=NaN;smoothBufferEnd=NaN;
   }
   function lineAtWord(wordIndex){
     if(!lineLayout?.length)return 0;
@@ -533,29 +533,45 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     return element;
   }
-  // The line window is virtualized: at most count+4 rows exist in the DOM.
-  // A change of base row replaces those rows and adjusts the transform in the
-  // *same frame*. This produces an unbroken upward stream even at chapter gaps.
-  function drawLineWindow(base,count,offset){
+  // Smooth mode keeps a much larger, persistent buffer of real lines.
+  // v1.7.1 rebuilt the DOM whenever the scroll crossed an integer line,
+  // causing a visible hitch on iPhone even when the transform was continuous.
+  // Keep ~60 extra rows on the same composited layer and rebase only once
+  // every few dozen lines, never on ordinary line-to-line transitions.
+  const SMOOTH_LEAD_ROWS=24, SMOOTH_TRAIL_ROWS=48;
+  let smoothBufferStart=NaN, smoothBufferEnd=NaN;
+  function drawLineWindow(position,count,anchor){
     const flow=$('lineFlow');
-    const key=[lineLayoutKey,base,count].join('|');
-    if(drawnWindowKey!==key){
-      if(scrollStyle!=='smooth')clearLineMotion();
+    // Virtual line 0 starts at the top of the anchor row.
+    const viewTop=position-anchor;
+    const needsBuffer=!Number.isFinite(smoothBufferStart) ||
+      drawnWindowKey!==[lineLayoutKey,'smooth',count].join('|') ||
+      viewTop<smoothBufferStart+8 ||
+      viewTop+count>smoothBufferEnd-12;
+    if(needsBuffer){
+      smoothBufferStart=Math.floor(viewTop)-SMOOTH_LEAD_ROWS;
+      smoothBufferEnd=smoothBufferStart+SMOOTH_LEAD_ROWS+count+SMOOTH_TRAIL_ROWS;
       renderedWords=new Map();
       const fragment=document.createDocumentFragment();
-      for(let i=0;i<count+4;i++)fragment.append(makeReadingLine(base+i));
+      for(let i=smoothBufferStart;i<smoothBufferEnd;i++)fragment.append(makeReadingLine(i));
       flow.replaceChildren(fragment);
-      drawnWindowKey=key;
+      drawnWindowKey=[lineLayoutKey,'smooth',count].join('|');
       renderedWords.get(index)?.classList.add('current-word');
     }
-    flow.style.transition='none';
-    flow.style.transform=`translate3d(0,${(-offset*lineHeight).toFixed(3)}px,0)`;
+    // This is a single continuously changing transform, not a transition.
+    // Its coordinate stays stable when the buffer is rebased.
+    const pixels=(viewTop-smoothBufferStart)*lineHeight;
+    flow.style.transform=`translate3d(0,${(-pixels).toFixed(3)}px,0)`;
   }
   function lineFraction(active,wordIndex){
     const line=lineLayout?.[active];if(!line||line.kind)return 0;
     let total=0,elapsed=0;
     for(let i=line.start;i<line.end;i++){
-      const ms=readingDelay(i);
+      // Compute the within-line position from ordinary word durations.
+      // Paragraph/chapter transit time belongs *after* the final word,
+      // not inside the line, or the line crawls before a break and races
+      // through its blank rows.
+      const ms=wordDuration(words[i]);
       total+=ms;
       if(i<wordIndex)elapsed+=ms;
     }
@@ -574,10 +590,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const b=index<words.length-1?smoothWordPosition(index+1):a;
     const ratio=playing?smoothFraction(now):smoothPausedWord===index?smoothPausedFraction:0;
     const position=a+(b-a)*ratio;
-    const current=Math.floor(position);
     const count=readingMode==='multi'?multiLines:1;
     const anchor=readingMode==='multi'?2:0;
-    drawLineWindow(current-anchor,count,Math.max(0,position-current));
+    drawLineWindow(position,count,anchor);
   }
   function runSmoothFrames(now){
     scrollFrame=0;
@@ -833,14 +848,28 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     render();
   }
   async function saveProgress(){if(doc&&doc.id!=='welcome'){doc.progress=index;doc.updated=Date.now();await txPut(doc);}}
-  function loadDoc(item){if(doc&&doc.id!=='welcome')void saveProgress();cancelModes();resetSmoothPause();doc={...item};words=tokenize(doc.text);structureBreaks=textBoundaries(doc.text,normalizeFileType(doc));lineLayoutKey='';drawnWindowKey='';lineLayout=null;currentLineIndex=-1;index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);if(!document.body.classList.contains('focus-mode'))document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
+  function loadDoc(item){if(doc&&doc.id!=='welcome')void saveProgress();cancelModes();resetSmoothPause();doc={...item};words=tokenize(doc.text);structureBreaks=textBoundaries(doc.text,normalizeFileType(doc));lineLayoutKey='';drawnWindowKey='';smoothBufferStart=NaN;smoothBufferEnd=NaN;lineLayout=null;currentLineIndex=-1;index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);if(!document.body.classList.contains('focus-mode'))document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
   function wordDuration(word){let ms=60000/wpm; if(/[.!?][”’"')\]]*$/.test(word)) ms*=1.9;else if(/[,;:][”’"')\]]*$/.test(word)) ms*=1.4;if(word.length>12)ms*=1.25;return ms;}
   // A small pause gives the eye time to register a new paragraph or chapter.
   // The word index never changes due to formatting-only rows.
   function readingDelay(at){
     let duration=wordDuration(words[at]||'');
-    if(readingMode!=='word'){
-      const nextBreak=structureBreaks.get(at+1);
+    if(readingMode==='word'||at>=words.length-1)return duration;
+    const nextBreak=structureBreaks.get(at+1);
+    if(scrollStyle==='smooth'&&lineLayout?.length){
+      // Blank paragraph/chapter rows are physical distance, not an instant
+      // jump. Give each added row approximately one normal line's reading
+      // time; vertical speed remains similar across a gap and ordinary text.
+      const previousLineIndex=lineAtWord(at);
+      const nextLineIndex=lineAtWord(at+1);
+      const blankRows=Math.max(0,nextLineIndex-previousLineIndex-1);
+      if(blankRows){
+        const line=lineLayout[previousLineIndex];
+        const wordsPerRow=line?Math.max(3,Math.min(12,line.end-line.start)):6;
+        duration+=blankRows*wordsPerRow*(60000/wpm);
+      }
+    }else{
+      // Deliberate holds are still appropriate for stepped reading.
       if(nextBreak==='chapter')duration+=780;
       else if(nextBreak==='paragraph')duration+=220;
     }
