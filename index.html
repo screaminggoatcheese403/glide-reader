@@ -7,7 +7,7 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Glide Reader">
-  <title>Glide Reader — One word. All focus. (v1.6.2)</title>
+  <title>Glide Reader — One word. All focus. (v1.7.0)</title>
   <meta name="description" content="One word. All focus. A free reader with three reading modes, scrolling text and adjustable focus.">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="apple-touch-icon" href="./icon-180.png">
@@ -191,6 +191,14 @@
     .reading-token {display:inline;color:var(--text);}
     .reading-token.current-word {color:var(--focus-color);background:rgba(255,255,255,.1);border-radius:3px;}
     .stage.no-highlight .reading-token.current-word {color:var(--text);background:none;}
+    /* Formatting is represented as virtual rows so the active word keeps the
+       third-row anchor in multi-line mode, including at chapter boundaries. */
+    .reading-line.paragraph-start {padding-left:calc(var(--reader-font-size,24px) * 1.3);}
+    .reading-line.chapter-divider {display:flex;align-items:center;justify-content:center;opacity:.72;}
+    .reading-line.chapter-divider:before {content:"";display:block;width:min(46%,140px);border-top:1px solid #7e95b3;}
+    .reading-line.paragraph-spacer,.reading-line.chapter-spacer {color:transparent;}
+    .book-restore {border:1px solid #54718c;background:#263a51;color:#c6ddf7;padding:4px 7px;border-radius:7px;font-size:11px;cursor:pointer;font-weight:650;}
+    .book-restore:focus-visible {outline:2px solid #9cbbff;outline-offset:2px;}
     .font-control {display:grid;gap:8px;}
     .font-control label {font-size:13px;color:#dce7f5;}
     .font-line {display:flex;align-items:center;gap:12px;}
@@ -273,7 +281,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     </div>
     <div class="speed"><label for="wpm">Reading speed</label><input type="range" id="wpm" min="100" max="1000" step="25" value="300"><span class="speedvalue" id="wpmValue">300 WPM</span></div>
     <details class="reading-settings" id="readingSettings">
-      <summary>Font, size &amp; reading highlight</summary>
+      <summary>Text layout, font, size &amp; highlight</summary>
       <div class="settings-content">
         <div class="font-control">
           <label for="readingFont">Reading font</label>
@@ -281,6 +289,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
             <option value="sans">Sans-serif</option><option value="serif">Serif</option><option value="mono">Monospaced</option>
           </select></div>
           <div class="font-size-row"><label for="fontSize">Font size</label><input type="range" id="fontSize" min="14" max="40" step="1" value="24"><output id="fontSizeValue" for="fontSize" class="font-size-value">24 px</output></div>
+        </div>
+        <div class="font-control" id="paragraphStyleControl">
+          <label for="paragraphStyle">Paragraph layout</label>
+          <div class="font-line"><select class="type-select" id="paragraphStyle">
+            <option value="indent">Book-style indents</option>
+            <option value="space">Blank line between paragraphs</option>
+          </select></div>
+          <p class="settings-hint">Chapter breaks remain separated in both layouts. Applies to imported books with formatting information.</p>
         </div>
         <div class="settings-line">
           <label for="highlightEnabled" id="highlightEnabledLabel">Highlight focal letter</label>
@@ -324,12 +340,14 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       <div class="row"><div><div class="eyebrow">Saved on this device</div><h2>My library</h2></div><span class="chip" id="libraryCount">0 items</span></div>
       <div class="library" id="libraryList"><div class="empty">Your library is loading…</div></div>
       <input id="coverFileInput" type="file" accept=".epub,.pdf,.jpg,.jpeg,.png,.webp,.gif,application/epub+zip,application/pdf,image/*" hidden aria-label="Choose an EPUB, PDF, or image for the cover">
+      <input id="formatFileInput" type="file" accept=".epub,.pdf,.txt,.md,.html,.htm,application/epub+zip,application/pdf,text/plain,text/html" hidden aria-label="Choose original document to restore paragraphs and chapters">
       <p class="hint">Tap a book's miniature cover to add or replace its artwork. For older EPUBs or PDFs, choose the original book file again—your reading position is preserved.</p>
+      <p>Already imported a book? Tap <strong>Restore layout</strong> below its title and choose the same original EPUB or PDF. This adds paragraphs and chapter breaks to that saved book, without resetting your place.</p>
       <p>Use the small format menu below a book title to label older FILE entries as EPUB, PDF, or another type.</p>
       <p>Play/Pause: Space on your computer. Back/forward: ← / →. Tap the reader on your phone.</p>
     </section>
   </div>
-  <div class="footer">Glide Reader v1.6.2 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
+  <div class="footer">Glide Reader v1.7.0 is an independent demonstration app, not affiliated with Readrrr or Ocule AS. Imported content stays on your device; speech is provided by your browser/device. PDFs with unusual layouts and image-only scans may not import properly.</div>
 </div>
 <script>
 (() => {
@@ -347,6 +365,31 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   $('wpm').value = String(wpm); $('wpmValue').textContent = wpm + ' WPM';
   const tokenize = str => (str || '').match(/\S+/g) || [];
   const clean = str => (str || '').replace(/\s+/g, ' ').trim();
+  // Preserve hard paragraph and chapter boundaries in saved text. Word indexes
+  // remain compatible with older versions because tokenize() still uses /\S+/g.
+  // A triple newline separates EPUB spine chapters; single/double newlines
+  // separate individual text blocks and paragraphs.
+  const normalizeBookText = str => (str || '').replace(/\r\n?/g,'\n')
+    .replace(/\u00a0/g,' ').replace(/[^\S\n]+/g,' ')
+    .replace(/ *\n */g,'\n').replace(/\n{4,}/g,'\n\n\n').trim();
+  function textBoundaries(text,kind){
+    const boundaries=new Map();const matcher=/\S+/g;
+    let match,lastEnd=0,wordIndex=0;
+    while((match=matcher.exec(text||''))){
+      if(wordIndex){
+        const between=(text||'').slice(lastEnd,match.index);
+        const newlines=(between.match(/\n/g)||[]).length;
+        // Plain text often uses single newlines for wrapping; two empty
+        // lines give a reliable paragraph break there. EPUB HTML blocks
+        // and PDF layout extraction use single newlines deliberately.
+        const required=['txt','md','note','file'].includes(kind)?2:1;
+        if(newlines>=3&&kind==='epub')boundaries.set(wordIndex,'chapter');
+        else if(newlines>=required)boundaries.set(wordIndex,'paragraph');
+      }
+      wordIndex++;lastEnd=matcher.lastIndex;
+    }
+    return boundaries;
+  }
   let highlightEnabled=true, highlightColor='#fe5973', recognitionOffset=0;
   try {
     highlightEnabled=localStorage.getItem('glide_highlight_enabled')!=='false';
@@ -372,6 +415,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   if(!['smooth','step'].includes(scrollStyle))scrollStyle='smooth';
   let multiLines=Number(readPreference('glide_multi_lines','5'));
   if(![4,5,6].includes(multiLines))multiLines=5;
+  let paragraphStyle=readPreference('glide_paragraph_style','indent');
+  if(!['indent','space'].includes(paragraphStyle))paragraphStyle='indent';
   let readingFont=readPreference('glide_reading_font','serif');
   if(!fontFamilies[readingFont])readingFont='serif';
   const clampFontSize=v=>Math.max(14,Math.min(40,Number.isFinite(Number(v))?Math.round(Number(v)):24));
@@ -379,6 +424,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   let linesFontSize=clampFontSize(readPreference('glide_font_size_lines','24'));
   const activeFontSize=()=>readingMode==='word'?wordFontSize:linesFontSize;
   let lineLayout=null, lineLayoutKey='', drawnWindowKey='', currentLineIndex=-1;
+  let structureBreaks=new Map();
   let renderedWords=new Map(), scrollFrame=0, stepScrollTimer=0;
   let lineHeight=36;
   const measureCanvas=document.createElement('canvas');
@@ -396,6 +442,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     $('scrollStyleControl').hidden=readingMode==='word';
     $('lineCountControl').hidden=readingMode!=='multi';
     $('readingFont').value=readingFont;
+    $('paragraphStyle').value=paragraphStyle;
+    $('paragraphStyleControl').hidden=readingMode==='word';
     $('fontSize').value=String(activeFontSize());
     $('fontSizeValue').textContent=activeFontSize()+' px';
     $('stage').classList.toggle('is-scrolling',readingMode!=='word');
@@ -417,27 +465,42 @@ https://github.com/nodeca/pako/blob/main/LICENSE
   }
   function ensureLineLayout(){
     if(readingMode==='word'||!words.length)return;
-    // Measure once per document, available width and font. A word-width cache
-    // makes complete book reflow quick even for long imported texts.
     const width=Math.max(100,Math.floor($('lineViewport').clientWidth)-8);
-    const key=[doc?.id||'welcome',words.length,width,readingFont,activeFontSize()].join('|');
+    const key=[doc?.id||'welcome',words.length,width,readingFont,activeFontSize(),paragraphStyle].join('|');
     if(lineLayoutKey===key&&lineLayout)return;
-    const font=`${activeFontSize()}px ${fontFamilies[readingFont]}`;
     if(!measureContext)return;
-    measureContext.font=font;
+    measureContext.font=`${activeFontSize()}px ${fontFamilies[readingFont]}`;
     const space=measureContext.measureText(' ').width;
-    const widths=new Map();
-    const lines=[];
-    let start=0,currentWidth=0;
+    const widths=new Map(),lines=[];
+    const indentWidth=activeFontSize()*1.3;
+    let start=0,currentWidth=0,firstLineIndent=false;
+    function finish(end){
+      if(end>start)lines.push({start,end,indent:firstLineIndent});
+      start=end;currentWidth=0;firstLineIndent=false;
+    }
     for(let i=0;i<words.length;i++){
+      const boundary=structureBreaks.get(i);
+      if(boundary){
+        finish(i);
+        if(boundary==='chapter'){
+          lines.push({start:i,end:i,kind:'chapter-spacer'});
+          lines.push({start:i,end:i,kind:'chapter-divider'});
+          lines.push({start:i,end:i,kind:'chapter-spacer'});
+        }else if(paragraphStyle==='space'){
+          lines.push({start:i,end:i,kind:'paragraph-spacer'});
+        }else firstLineIndent=true;
+      }
       const word=words[i];
       let wordWidth=widths.get(word);
       if(wordWidth===undefined){wordWidth=measureContext.measureText(word).width;widths.set(word,wordWidth);}
-      const nextWidth=currentWidth+(i===start?0:space)+wordWidth;
-      if(i>start && nextWidth>width){lines.push({start,end:i});start=i;currentWidth=wordWidth;}
-      else currentWidth=nextWidth;
+      const base=(i===start&&firstLineIndent)?indentWidth:currentWidth;
+      const nextWidth=base+(i===start?0:space)+wordWidth;
+      if(i>start&&nextWidth>width){
+        finish(i);
+        currentWidth=wordWidth;
+      }else currentWidth=nextWidth;
     }
-    if(start<words.length)lines.push({start,end:words.length});
+    finish(words.length);
     lineLayout=lines;
     lineLayoutKey=key;drawnWindowKey='';
   }
@@ -451,6 +514,8 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const element=document.createElement('div');element.className='reading-line';
     const entry=lineLayout[lineIndex];
     if(!entry)return element;
+    if(entry.kind){element.classList.add(entry.kind);element.setAttribute('aria-hidden','true');return element;}
+    if(entry.indent)element.classList.add('paragraph-start');
     for(let j=entry.start;j<entry.end;j++){
       if(j!==entry.start)element.append(document.createTextNode(' '));
       const span=document.createElement('span');span.className='reading-token';span.textContent=words[j];
@@ -474,7 +539,9 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(drawnWindowKey!==key){
       clearLineMotion();renderedWords=new Map();
       const fragment=document.createDocumentFragment();
-      for(let i=0;i<count+1;i++)fragment.append(makeReadingLine(base+i));
+      // Chapter breaks can span three virtual rows; mount enough extra rows
+      // that smooth and stepped scrolling do not reveal an empty viewport.
+      for(let i=0;i<count+4;i++)fragment.append(makeReadingLine(base+i));
       flow.replaceChildren(fragment);
       drawnWindowKey=key;
     }
@@ -502,10 +569,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       flow.style.transform='translate3d(0,0,0)';
       return;
     }
-    const delay=wordDuration(words[index]||'');
+    const delay=readingDelay(index);
+    const nextActive=index<words.length-1?lineAtWord(index+1):active;
     if(scrollStyle==='smooth'){
       if(scrollFrame)cancelAnimationFrame(scrollFrame);
-      const start=lineFraction(active,index,false),end=lineFraction(active,index,true);
+      const start=lineFraction(active,index,false);
+      const end=nextActive>active ? nextActive-active : lineFraction(active,index,true);
       flow.style.transition='none';
       flow.style.transform=`translate3d(0,${(-lineHeight*start).toFixed(2)}px,0)`;
       // Force style commit so identical DOM rows can animate without resetting.
@@ -521,11 +590,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       if(stepScrollTimer)clearTimeout(stepScrollTimer);
       flow.style.transition='none';flow.style.transform='translate3d(0,0,0)';
       const lastWord=lineLayout[active]?.end-1;
-      if(index===lastWord && active<lineLayout.length-1){
-        const duration=Math.min(260,Math.max(100,delay*.45));
+      if(index===lastWord && nextActive>active){
+        const distance=nextActive-active;
+        const duration=Math.min(520,Math.max(160,delay*.55));
         stepScrollTimer=setTimeout(()=>{
           flow.style.transition=`transform ${Math.round(duration)}ms ease-in-out`;
-          flow.style.transform=`translate3d(0,${-lineHeight}px,0)`;
+          flow.style.transform=`translate3d(0,${-lineHeight*distance}px,0)`;
         },Math.max(0,delay-duration));
       }
     }
@@ -614,7 +684,15 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       };
       const hint=document.createElement('span');hint.className='book-cover-hint';
       hint.textContent=hasCover?'Change cover':'Add cover';
-      meta.append(typeSelect,hint);details.append(btn,meta);
+      meta.append(typeSelect,hint);
+      if(kind!=='note'){
+        const restore=document.createElement('button');restore.type='button';restore.className='book-restore';
+        restore.textContent='Restore layout';restore.title='Restore paragraphs and chapter breaks from the original file';
+        restore.setAttribute('aria-label',`Restore paragraphs and chapter breaks for ${item.title}`);
+        restore.onclick=()=>chooseRestore(item);
+        meta.append(restore);
+      }
+      details.append(btn,meta);
       const del=document.createElement('button');del.className='trash';del.textContent='✕';
       del.title='Delete this document';del.setAttribute('aria-label',`Delete ${item.title}`);
       del.onclick=async()=>{
@@ -708,9 +786,20 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     render();
   }
   async function saveProgress(){if(doc&&doc.id!=='welcome'){doc.progress=index;doc.updated=Date.now();await txPut(doc);}}
-  function loadDoc(item){if(doc&&doc.id!=='welcome')void saveProgress();cancelModes();doc={...item};words=tokenize(doc.text);lineLayoutKey='';drawnWindowKey='';lineLayout=null;currentLineIndex=-1;index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);if(!document.body.classList.contains('focus-mode'))document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
+  function loadDoc(item){if(doc&&doc.id!=='welcome')void saveProgress();cancelModes();doc={...item};words=tokenize(doc.text);structureBreaks=textBoundaries(doc.text,normalizeFileType(doc));lineLayoutKey='';drawnWindowKey='';lineLayout=null;currentLineIndex=-1;index=Math.max(0,Math.min(Number(doc.progress)||0,Math.max(0,words.length-1)));render();saveProgress();status(`Opened “${doc.title}”.`);if(!document.body.classList.contains('focus-mode'))document.querySelector('.reader').scrollIntoView({behavior:'smooth',block:'start'});}
   function wordDuration(word){let ms=60000/wpm; if(/[.!?][”’"')\]]*$/.test(word)) ms*=1.9;else if(/[,;:][”’"')\]]*$/.test(word)) ms*=1.4;if(word.length>12)ms*=1.25;return ms;}
-  function tick(){if(!playing)return;const wait=wordDuration(words[index]||'');timer=setTimeout(()=>{if(!playing)return;if(index>=words.length-1){playing=false;render();saveProgress();status('Finished! You can restart with the back button.');return;}index++;render();if(index%9===0)saveProgress();tick();},wait);}
+  // A small pause gives the eye time to register a new paragraph or chapter.
+  // The word index never changes due to formatting-only rows.
+  function readingDelay(at){
+    let duration=wordDuration(words[at]||'');
+    if(readingMode!=='word'){
+      const nextBreak=structureBreaks.get(at+1);
+      if(nextBreak==='chapter')duration+=780;
+      else if(nextBreak==='paragraph')duration+=220;
+    }
+    return duration;
+  }
+  function tick(){if(!playing)return;const wait=readingDelay(index);timer=setTimeout(()=>{if(!playing)return;if(index>=words.length-1){playing=false;render();saveProgress();status('Finished! You can restart with the back button.');return;}index++;render();if(index%9===0)saveProgress();tick();},wait);}
   function togglePlayback(){if(narrating)cancelModes();if(!words.length)return;if(playing){cancelModes();saveProgress();return;}if(index>=words.length-1)index=0;playing=true;render();void requestWakeLock();tick();}
   function seek(n){cancelModes();index=Math.max(0,Math.min(words.length-1,index+n));render();saveProgress();}
   function sentenceStart(i){
@@ -933,7 +1022,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }catch(e){status('Cover not updated: '+(e?.message||String(e)),'error');}
     finally{$('coverFileInput').value='';$('coverFileInput').removeAttribute('aria-busy');}
   }
-  async function addDocument(title,text,fileType='note',cover=null){text=clean(text);if(!text){status('Please enter or import some text first.','error');return null;}if(tokenize(text).length>350000){status('This version supports books up to 350,000 words.','error');return null;}const item={id:newId(),title:clean(title)||'Untitled reading',text,progress:0,updated:Date.now(),fileType,cover:safeCover(cover)?cover:null};const saved=await txPut(item);await refreshBooks();loadDoc(item);status(saved?`Added “${item.title}” to your library.`:'The text is ready to read, but browser storage was unavailable.');return saved;}
+  async function addDocument(title,text,fileType='note',cover=null){text=normalizeBookText(text);if(!text){status('Please enter or import some text first.','error');return null;}if(tokenize(text).length>350000){status('This version supports books up to 350,000 words.','error');return null;}const item={id:newId(),title:clean(title)||'Untitled reading',text,progress:0,updated:Date.now(),fileType,cover:safeCover(cover)?cover:null};const saved=await txPut(item);await refreshBooks();loadDoc(item);status(saved?`Added “${item.title}” to your library.`:'The text is ready to read, but browser storage was unavailable.');return saved;}
   async function fromPDF(file){
     if(!window.pdfjsLib)throw Error('PDF import needs an internet connection to load the PDF reader library.');
     window.pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -944,7 +1033,29 @@ https://github.com/nodeca/pako/blob/main/LICENSE
         status(`Extracting PDF page ${i} of ${pdf.numPages}…`);
         const page=await pdf.getPage(i);
         if(i===1)cover=await thumbnailFromPDFPage(page);
-        const tc=await page.getTextContent();pages.push(tc.items.map(x=>x.str).join(' '));
+        const tc=await page.getTextContent();
+        const items=tc.items.filter(x=>typeof x.str==='string'&&x.str.trim());
+        const starts=[];let previous=null;
+        for(const el of items){
+          if(!previous||previous.hasEOL||Math.abs((el.transform?.[5]||0)-(previous.transform?.[5]||0))>2)
+            starts.push(el.transform?.[4]||0);
+          previous=el;
+        }
+        const sorted=[...starts].sort((a,b)=>a-b);
+        const leftEdge=sorted[Math.floor(sorted.length*.2)]||0;
+        let text='',last=null;
+        for(const el of items){
+          if(last){
+            const yGap=Math.abs((el.transform?.[5]||0)-(last.transform?.[5]||0));
+            const lineStep=Math.max(Number(last.height)||0,Number(el.height)||0,8);
+            const isNewLine=last.hasEOL||yGap>lineStep*.5;
+            const x=el.transform?.[4]||0;
+            const indentation=x>leftEdge+lineStep*1.1;
+            text+=(isNewLine && (yGap>lineStep*1.45||indentation))?'\n':' ';
+          }
+          text+=el.str;last=el;
+        }
+        pages.push(text);
       }
     }finally{if(typeof pdf.destroy==='function')await pdf.destroy();}
     return {text:pages.join('\n\n'),cover};
@@ -1035,8 +1146,64 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     }
     let cover=null;
     try{cover=await extractEPUBCoverFromPackage(zip,opf,opfPath,manifest);}catch(e){console.warn('EPUB cover not available:',e);}
-    return {text:pages.join('\n\n'),cover};
+    return {text:pages.join('\n\n\n'),cover};
   }
+  let formatTargetId=null;
+  function chooseRestore(item){
+    formatTargetId=item.id;
+    const input=$('formatFileInput');input.value='';input.click();
+  }
+  function sameBook(oldText,newText){
+    const a=tokenize(oldText),b=tokenize(newText);
+    if(!a.length||!b.length)return false;
+    if(Math.abs(a.length-b.length)>Math.max(10,a.length*.025))return false;
+    // Compare sampled anchor phrases, allowing small offsets from variations
+    // in document metadata without accepting an unrelated book.
+    const anchors=[0,.1,.33,.66,.9].map(frac=>Math.floor(frac*Math.min(a.length,b.length)));
+    let matches=0;
+    for(const at of anchors){
+      const key=a.slice(at,Math.min(at+6,a.length)).join(' ').toLowerCase();
+      for(let offset=-16;offset<=16;offset++){
+        const p=at+offset;
+        if(p>=0 && b.slice(p,p+6).join(' ').toLowerCase()===key){matches++;break;}
+      }
+    }
+    return matches>=3;
+  }
+  async function restoreLayoutFromFile(file){
+    if(!file||!formatTargetId)return;
+    const id=formatTargetId;formatTargetId=null;
+    status(`Restoring book layout from ${file.name}…`);
+    try{
+      const ext=(file.name.split('.').pop()||'').toLowerCase();
+      const old=(await txAll()).find(x=>x.id===id);
+      if(!old)throw Error('This book is no longer in your library.');
+      const kind=normalizeFileType(old);
+      if(kind!=='file' && ext!==kind && !(kind==='html'&&ext==='htm'))throw Error('Choose the same file format as the saved book.');
+      let text;
+      if(ext==='epub')text=(await fromEPUB(file)).text;
+      else if(ext==='pdf')text=(await fromPDF(file)).text;
+      else if(ext==='txt'||ext==='md')text=await file.text();
+      else if(ext==='html'||ext==='htm')text=epubText(await file.text());
+      else throw Error('Choose the original EPUB, PDF, TXT, MD or HTML document.');
+      text=normalizeBookText(text);
+      if(!sameBook(old.text,text))throw Error('The selected file does not appear to match this saved book. No changes were made.');
+      const savedPosition=doc?.id===id?index:(Number(old.progress)||0);
+      const changed={...old,text,progress:Math.min(savedPosition,tokenize(text).length-1),
+        fileType:kind==='file'?(ext==='htm'?'html':ext):old.fileType,updated:Date.now()};
+      if(!(await txPut(changed)))throw Error('Device storage could not save the updated book.');
+      if(doc?.id===id){
+        doc={...changed};words=tokenize(text);index=changed.progress;
+        structureBreaks=textBoundaries(doc.text,normalizeFileType(doc));
+        lineLayoutKey='';drawnWindowKey='';lineLayout=null;
+        cancelModes();render();
+      }
+      await refreshBooks();
+      status(`Restored paragraph and chapter formatting for “${old.title}”. Your reading place was kept.`,'success');
+    }catch(e){status('Restore layout failed: '+(e?.message||String(e)),'error');}
+    finally{$('formatFileInput').value='';}
+  }
+  $('formatFileInput').onchange=e=>void restoreLayoutFromFile(e.target.files?.[0]);
   let importInProgress=false;
   async function importFile(file){
     if(!file||importInProgress)return;
@@ -1051,7 +1218,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
       else if(['htm','html'].includes(ext)){
         const html=new DOMParser().parseFromString(await file.text(),'text/html');
         html.querySelectorAll('script,style,noscript,nav').forEach(el=>el.remove());
-        text=html.body?.textContent||'';
+        text=epubText(html.documentElement.outerHTML);
       }else if(['txt','md'].includes(ext))text=await file.text();
       else throw Error('Choose a file ending in .epub, .pdf, .txt, .md or .html.');
       if(!clean(text))throw Error('No readable text found. Scanned PDFs and image-only ebooks are not supported.');
@@ -1131,6 +1298,12 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     if(![4,5,6].includes(Number(e.target.value)))return;
     cancelModes();multiLines=Number(e.target.value);
     saveFocusPreference('glide_multi_lines',multiLines);
+    applyReadingPreferences();render();
+  };
+  $('paragraphStyle').onchange=e=>{
+    if(!['indent','space'].includes(e.target.value))return;
+    cancelModes();paragraphStyle=e.target.value;
+    saveFocusPreference('glide_paragraph_style',paragraphStyle);
     applyReadingPreferences();render();
   };
   $('readingFont').onchange=e=>{
